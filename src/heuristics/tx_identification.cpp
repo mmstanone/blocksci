@@ -50,63 +50,6 @@ namespace heuristics {
         return false;
     }
 
-
-
-    /**
-     * Check if a transaction looks like a Wasabi2 CoinJoin transaction.
-     * Ported from Dumplings
-    */
-    bool isWasabi2CoinJoin(const Transaction &tx, std::optional<uint64_t> inputCount) {
-        // first ww2 coinjoin block
-        if (tx.getBlockHeight() < blocksci::CoinjoinUtils::FirstWasabi2Block) {
-            return false;
-        }
-        for (const auto &input : tx.inputs()) {
-            if (input.getType() != AddressType::Enum::WITNESS_PUBKEYHASH && input.getType() != AddressType::Enum::WITNESS_UNKNOWN) {
-                return false;
-            }
-        }
-        for (const auto &output : tx.outputs()) {
-            if (output.getType() != AddressType::Enum::WITNESS_PUBKEYHASH && output.getType() != AddressType::Enum::WITNESS_UNKNOWN) {
-                return false;
-            }
-        }
-
-        if ((inputCount.has_value() && tx.inputCount() != inputCount) || (!inputCount.has_value() && tx.inputCount() < 50)) {
-            return false;
-        }
-
-        // Inputs are ordered descending.
-        long long prev_input_value = -1;
-        for (const auto &input : tx.inputs()) {
-            
-            if (prev_input_value != -1 && input.getValue() > prev_input_value) {
-                return false;
-            }
-
-            prev_input_value = input.getValue();
-        }
-
-        // Outputs are ordered descending.
-        long long prev_output_value = -1;
-        for (const auto &output : tx.outputs()) {
-            if (prev_output_value != -1 && output.getValue() > prev_output_value) {
-                return false;
-            }
-
-            prev_output_value = output.getValue();
-        }
-
-        // Most of the outputs contains the denomination.
-        int count = 0;
-        for (const auto &output : tx.outputs()) {
-            if (CoinjoinUtils::ww2_denominations.find(output.getValue()) != CoinjoinUtils::ww2_denominations.end()) {
-                count++;
-            }
-        }
-
-        return count > tx.outputCount() * 0.8;
-    }
     
     bool isCoinjoin(const Transaction &tx) {
         if (tx.inputCount() < 2 || tx.outputCount() < 3) {
@@ -720,12 +663,138 @@ namespace heuristics {
         if (tx.getBlockHeight() < blocksci::CoinjoinUtils::FirstWasabiBlock) {
             return false;
         }
+        // before FirstWasabiNoCoordAddressBlock WW1 had different base denominations and fixed coordinators
+        if (tx.getBlockHeight() < blocksci::CoinjoinUtils::FirstWasabiNoCoordAddressBlock) {
+            // at least one output has to be a coord output
+
+            // get output values and their count
+            std::unordered_map<int64_t, int> outputValues;
+            bool is_coord_output = false;
+            bool more_than_two_outputs = false;
+
+            for (auto output: tx.outputs()) {
+                if (!more_than_two_outputs) {
+                    outputValues[output.getValue()]++;
+                    if (outputValues[output.getValue()] > 2) {
+                        more_than_two_outputs = true;
+                    }
+                }
+
+
+                if (!is_coord_output && output.isSpent()) {
+                    auto address = output.getAddress().toString();
+                    if (address == "bc1qs604c7jv6amk4cxqlnvuxv26hv3e48cds4m0ew" || address == "bc1qa24tsgchvuxsaccp8vrnkfd85hrcpafg20kmjw")
+                    {
+                        is_coord_output = true;
+                    }
+                }
+
+                if (is_coord_output && more_than_two_outputs) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
 
         if (blocksci::heuristics::isWasabi2CoinJoin(tx)) {
             return false;
         }
+        // after FirstWasabiNoCoordAddressBlock WW1 had fixed base denomination and no coordinators
+
+        // and there are at least 10 equal outputs
+        std::unordered_map<int64_t, int> outputValues;
+        for (auto output: tx.outputs()) {
+            // all inputs segwit only
+            if (output.getType() != AddressType::Enum::WITNESS_PUBKEYHASH) {
+                return false;
+            }
+            outputValues[output.getValue()]++;
+        }
+
+        if (outputValues.size() < 2) {
+            return false;
+        }
+
+        auto mostFrequentEqualOutputCount = std::max_element(
+            std::begin(outputValues), std::end(outputValues),
+                [] (const std::pair<int64_t, int> & p1, const std::pair<int64_t, int> & p2) {
+                    return p1.second < p2.second;
+                }
+        );
+
+        if (mostFrequentEqualOutputCount->second < 10) {
+            return false;
+        }
+
+        // and there are more inputs than most frequent equal outputs
+        if (tx.inputCount() < mostFrequentEqualOutputCount->second) {
+            return false;
+        } 
+
+        // and the most frequent equal output is almost the base denomination 0.1 BTC +- 0.02 BTC
+
+        if (mostFrequentEqualOutputCount->first < 0.08 * 1e8 || mostFrequentEqualOutputCount->first > 0.12 * 1e8) {
+            return false;
+        }
+
         return true;
 
+    }
+
+     /**
+     * Check if a transaction looks like a Wasabi2 CoinJoin transaction.
+     * Ported from Dumplings
+    */
+    bool isWasabi2CoinJoin(const Transaction &tx, std::optional<uint64_t> inputCount) {
+        // first ww2 coinjoin block
+        if (tx.getBlockHeight() < blocksci::CoinjoinUtils::FirstWasabi2Block) {
+            return false;
+        }
+        for (const auto &input : tx.inputs()) {
+            if (input.getType() != AddressType::Enum::WITNESS_PUBKEYHASH && input.getType() != AddressType::Enum::WITNESS_UNKNOWN) {
+                return false;
+            }
+        }
+        for (const auto &output : tx.outputs()) {
+            if (output.getType() != AddressType::Enum::WITNESS_PUBKEYHASH && output.getType() != AddressType::Enum::WITNESS_UNKNOWN) {
+                return false;
+            }
+        }
+
+        if ((inputCount.has_value() && tx.inputCount() != inputCount) || (!inputCount.has_value() && tx.inputCount() < 50)) {
+            return false;
+        }
+
+        // Inputs are ordered descending.
+        long long prev_input_value = -1;
+        for (const auto &input : tx.inputs()) {
+            
+            if (prev_input_value != -1 && input.getValue() > prev_input_value) {
+                return false;
+            }
+
+            prev_input_value = input.getValue();
+        }
+
+        // Outputs are ordered descending.
+        long long prev_output_value = -1;
+        for (const auto &output : tx.outputs()) {
+            if (prev_output_value != -1 && output.getValue() > prev_output_value) {
+                return false;
+            }
+
+            prev_output_value = output.getValue();
+        }
+
+        // Most of the outputs contains the denomination.
+        int count = 0;
+        for (const auto &output : tx.outputs()) {
+            if (CoinjoinUtils::ww2_denominations.find(output.getValue()) != CoinjoinUtils::ww2_denominations.end()) {
+                count++;
+            }
+        }
+        return count > (tx.outputCount() * 0.8);
     }
 
     bool isWhirlpoolCoinJoin(const Transaction &tx) {
@@ -777,18 +846,52 @@ namespace heuristics {
         return std::count_if(tx.inputs().begin(), tx.inputs().end(), [current_pool_size](const Input& input) {
             return input.getValue() != current_pool_size && input.getValue() > current_pool_size && (input.getValue() - current_pool_size) < 110000;
         });
-
-
-        // var poolSizedInputCount = tx.Inputs.Count(x => x.PrevOutput.Value == poolSize);
-        // isSamouraiCj =
-        //    isNativeSegwitOnly
-        //    && inputCount >= 5 && inputCount <= 10
-        //    && outputCount >= 5 && outputCount <= 10
-        //    && inputCount == outputCount
-        //    && outputValues.Distinct().Count() == 1 // Outputs are always equal.
-        //    && Constants.SamouraiPools.Any(x => x == poolSize) // Just to be sure match Samourai's pool sizes.
-        //    && poolSizedInputCount >= 1
-        //    && tx.Inputs.Where(x => x.PrevOutput.Value != poolSize).All(x => x.PrevOutput.Value.Almost(poolSize, Money.Coins(0.0011m)));
-
     }
-}}
+
+    ConsolidationType getConsolidationType(const Transaction &tx, double inputOutputRatio) {
+        if (tx.inputCount() != 1 && tx.outputCount() == 1) {
+            return ConsolidationType::Certain;
+        }
+
+        auto total_output_value = std::accumulate(tx.outputs().begin(), tx.outputs().end(), 0, [](int64_t sum, const Output& output) {
+            return sum + output.getValue();
+        });
+
+        // Check if there is one huge output that has the majority of the output value, while the rest are small, it's a consolidation
+        if (tx.outputCount() > 1 && tx.outputCount() < (tx.inputCount() * inputOutputRatio)) {
+            
+            // Check if any input is larger than half of the total output value
+            if (std::any_of(tx.inputs().begin(), tx.inputs().end(), [total_output_value](const Input& input) {
+                return input.getValue() > total_output_value * 0.5;
+            })) {
+                return ConsolidationType::None;
+            }
+
+            // Determine the maximum output value
+            auto max_output_value = std::max_element(tx.outputs().begin(), tx.outputs().end(), [](const Output& a, const Output& b) {
+                return a.getValue() < b.getValue();
+            });
+
+            // If the largest output is more than 90% of the total output value, it's a possible consolidation
+            if ((*max_output_value).getValue() > total_output_value * 0.9) {
+                return ConsolidationType::Possible;
+            }
+        }
+
+        return ConsolidationType::None;
+    }
+
+    bool isCoinjoinOfGivenType(const Transaction &tx, const std::string &type) {
+        if (type == "wasabi1") {
+            return isWasabi1CoinJoin(tx);
+        } else if (type == "wasabi2") {
+            return isWasabi2CoinJoin(tx);
+        } else if (type == "whirlpool") {
+            return isWhirlpoolCoinJoin(tx);
+        } else {
+            return false;
+        }
+    }
+} // namespace heuristics
+} // namespace blocksci
+

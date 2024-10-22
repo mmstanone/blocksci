@@ -136,11 +136,11 @@ namespace blocksci {
             return denominations; 
         }
 
-        static inline std::vector<std::string> compute_ww2_coord_scripts() {
+        static inline std::vector<std::string> compute_ww1_coord_scripts() {
             return {"bc1qs604c7jv6amk4cxqlnvuxv26hv3e48cds4m0ew", "bc1qa24tsgchvuxsaccp8vrnkfd85hrcpafg20kmjw"};
         }
     public:
-        static inline std::vector<std::string> ww2_coord_scripts = CoinjoinUtils::compute_ww2_coord_scripts();
+        static inline std::vector<std::string> ww1_coord_scripts = CoinjoinUtils::compute_ww1_coord_scripts();
         static inline std::unordered_set<long> ww2_denominations = CoinjoinUtils::compute_ww2_denominations();
 
         CoinjoinUtils() = default;
@@ -149,10 +149,10 @@ namespace blocksci {
         CoinjoinUtils &operator=(const CoinjoinUtils &other) = default;
         CoinjoinUtils &operator=(CoinjoinUtils &&other) = default;
         ~CoinjoinUtils() = default;
-        static inline const int64_t FirstWasabi2Block = 741213;
-        static inline const int64_t FirstWasabiBlock = 530500;
-        static inline const int64_t FirstSamouraiBlock = 570000;
-        static inline const int64_t FirstWasabiNoCoordAddressBlock = 610000;
+        static inline int64_t FirstWasabi2Block = 741213;
+        static inline int64_t FirstWasabiBlock = 530500;
+        static inline int64_t FirstSamouraiBlock = 570000;
+        static inline int64_t FirstWasabiNoCoordAddressBlock = 610000;
 
         
     };

@@ -28,7 +28,7 @@ namespace blocksci {
         std::string toString() const;
         
         std::string toPrettyString() const {
-            return toString();
+            return addressString();
         }
     };
     
@@ -45,7 +45,7 @@ namespace blocksci {
         std::string toString() const;
         
         std::string toPrettyString() const {
-            return toString();
+            return addressString();
         }
     };
     
@@ -62,7 +62,7 @@ namespace blocksci {
         std::string toString() const;
         
         std::string toPrettyString() const {
-            return toString();
+            return addressString();
         }
     };
 } // namespace blocksci

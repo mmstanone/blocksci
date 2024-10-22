@@ -13,6 +13,11 @@
 #include "cluster.hpp"
 
 #include <blocksci/blocksci_export.h>
+#include <utility>
+#include <string>
+#include <memory>
+#include <unordered_map>
+#include <functional>
 
 namespace blocksci {
     namespace heuristics {
@@ -35,6 +40,8 @@ namespace blocksci {
         
         static ClusterManager createClustering(BlockRange &chain, const heuristics::ChangeHeuristic &heuristic, const std::string &outputPath, bool overwrite = false, bool ignoreCoinJoin = true);
         static ClusterManager createClustering(BlockRange &chain, const std::function<ranges::any_view<Output>(const Transaction &tx)> &changeHeuristic, const std::string &outputPath, bool overwrite, bool ignoreCoinJoin);
+    
+        static ClusterManager createCoinJoinClustering(BlockRange &chain, const std::string &outputPath, bool overwrite = false, std::string coinjoinType = "None");
         
         Cluster getCluster(const Address &address) const;
         

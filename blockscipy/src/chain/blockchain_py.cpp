@@ -19,6 +19,8 @@
 #include <blocksci/heuristics/tx_identification.hpp>
 #include "../external/json/single_include/nlohmann/json.hpp"
 
+#include <queue>
+
 namespace py = pybind11;
 
 using namespace blocksci;
@@ -116,6 +118,13 @@ void init_blockchain(py::class_<Blockchain> &cl) {
         }
         return pyAddresses;
     }, "Find all addresses beginning with the given prefix", pybind11::arg("prefix"))
+
+    .def("filter_fee_greater_than", [](Blockchain &chain, BlockHeight start, BlockHeight stop, uint64_t fee) {
+        return chain[{start, stop}].filter([fee](const Transaction &tx) {
+            return tx.fee() > fee;
+        });
+    }, "Filter the blockchain to only include transactions with a fee greater than the given value.", pybind11::arg("start"), pybind11::arg("stop"), pybind11::arg("fee"))
+    
     .def("find_friends_who_dont_pay", [](Blockchain &chain, const pybind11::dict &keys, BlockHeight start, BlockHeight stop) {
         std::unordered_set<std::string> umap;
         for (auto item : keys) {
@@ -173,23 +182,17 @@ void init_blockchain(py::class_<Blockchain> &cl) {
         return chain[{start, stop}].mapReduce<MapType, decltype(map_func), decltype(reduce_func)>(map_func, reduce_func);
     }, "Filter the blockchain to only include 'friends don't pay' transactions.", pybind11::arg("keys"), pybind11::arg("start"), pybind11::arg("stop"))
 
-    .def("filter_ww2_coinjoin_txes", [](Blockchain &chain, BlockHeight start, BlockHeight stop) {
-        return chain[{start, stop}].filter([](const Transaction &tx) {
-            return blocksci::heuristics::isWasabi2CoinJoin(tx);
+    .def("filter_coinjoin_txes", [](Blockchain &chain, BlockHeight start, BlockHeight stop, std::string coinjoin_type) {
+        return chain[{start, stop}].filter([&](const Transaction &tx) {
+            auto is_coinjoin_type = [&](const Transaction &tx, const std::string &coinjoinType) {
+                if (coinjoinType == "ww2") return blocksci::heuristics::isWasabi2CoinJoin(tx);
+                if (coinjoinType == "ww1") return blocksci::heuristics::isWasabi1CoinJoin(tx);
+                if (coinjoinType == "wp") return blocksci::heuristics::isWhirlpoolCoinJoin(tx);
+                return false;
+            };
+            return is_coinjoin_type(tx, coinjoin_type);
         });
-    }, "Filter ww2 coinjoin transactions", pybind11::arg("start"), pybind11::arg("stop"))
-
-    .def("filter_wp_coinjoin_txes", [](Blockchain &chain, BlockHeight start, BlockHeight stop) {
-        return chain[{start, stop}].filter([](const Transaction &tx) {
-            return blocksci::heuristics::isWhirlpoolCoinJoin(tx);
-        });
-    }, "Filter whirlpool coinjoin transactions", pybind11::arg("start"), pybind11::arg("stop"))
-
-    .def("filter_timestamped_txes", [](Blockchain &chain, BlockHeight start, BlockHeight stop) {
-        return chain[{start, stop}].filter([](const Transaction &tx) {
-            return tx.getTimeSeen().has_value() || tx.getTimestampSeen().has_value();
-        });
-    }, "Filter timestamped transactions", pybind11::arg("start"), pybind11::arg("stop"))
+    }, "Filter ww1 coinjoin transactions", pybind11::arg("start"), pybind11::arg("stop"), pybind11::arg("coinjoin_type"))
 
     .def("filter_in_keys", [](Blockchain &chain, const pybind11::dict &keys, BlockHeight start, BlockHeight stop) {
         std::unordered_set<std::string> umap;
@@ -485,6 +488,125 @@ void init_blockchain(py::class_<Blockchain> &cl) {
 
         
     }, "Filter transactions that traverse in coinjoin flows", pybind11::arg("start"), pybind11::arg("stop"), pybind11::arg("from_keys"), pybind11::arg("to_keys"), pybind11::arg("strict") = false)
+
+    .def("get_address_types", [](Blockchain &chain, BlockHeight start, BlockHeight stop) {
+        using MapType = std::unordered_map<blocksci::AddressType::Enum , int>;
+        auto reduce_func = [](MapType &vec1, MapType &vec2) -> MapType& {
+                for (const auto& [key, value] : vec2) {
+                    vec1[key] += value;
+                }
+                return vec1;
+        };
+
+        auto map_func = [](const Transaction &tx) -> MapType {
+            MapType result;
+            for (const auto& output : tx.outputs()) {
+                result[output.getAddress().getScript().getType()] += 1;
+            }
+            return result;
+        };
+
+        return chain[{start, stop}].mapReduce<MapType, decltype(map_func), decltype(reduce_func)>(map_func, reduce_func);
+    }, "Get address types", pybind11::arg("start"), pybind11::arg("stop"))
+
+    .def("get_coinjoin_consolidations", [](Blockchain &chain, BlockHeight start, BlockHeight stop, double inputOutputRatio, std::string coinjoinType, int maxHops) {
+        using ResultType = std::map<std::string, std::vector<Transaction>>; // consolidation_type, [input_tx_hash]
+        using MapType = std::vector<std::pair<Transaction, ResultType>>; // tx_hash, ResultType
+
+        auto global_visited = std::unordered_set<uint256>();
+        auto reduce_func = [](MapType &vec1, MapType &vec2) -> MapType& {
+                vec1.reserve(vec1.size() + vec2.size());
+                vec1.insert(vec1.end(), std::make_move_iterator(vec2.begin()), std::make_move_iterator(vec2.end()));
+                return vec1;
+        };
+
+        auto map_func = [&](const Transaction &tx) -> MapType {
+            auto is_coinjoin_type = [](const Transaction &tx, const std::string &coinjoinType) {
+                if (coinjoinType == "ww2") return blocksci::heuristics::isWasabi2CoinJoin(tx);
+                if (coinjoinType == "ww1") return blocksci::heuristics::isWasabi1CoinJoin(tx);
+                if (coinjoinType == "wp") return blocksci::heuristics::isWhirlpoolCoinJoin(tx);
+                return false;
+            };
+
+            if (!is_coinjoin_type(tx, coinjoinType)) {
+                return {};
+            }
+
+            ResultType result;
+            result["certain"] = {};
+            result["possible"] = {};
+
+            std::queue<std::pair<const Transaction &, int>> bfs_queue;
+            std::unordered_set<uint256> visited;
+
+            bfs_queue.push({tx, 0});
+            visited.insert(tx.getHash());
+
+            while (!bfs_queue.empty()) {
+                auto [current_tx, depth] = bfs_queue.front();
+                bfs_queue.pop();
+
+                if (depth > maxHops) continue;
+
+                for (const auto& output : current_tx.outputs()) {
+                    if (!output.isSpent()) continue;
+                    auto spending_tx = output.getSpendingTx().value();
+                    
+                    if (visited.count(spending_tx.getHash())) continue;
+                    visited.insert(spending_tx.getHash());
+
+                    if (is_coinjoin_type(spending_tx, coinjoinType)) {
+                        // bfs_queue.push({spending_tx, depth + 1});
+                        continue;
+                    }
+
+                    // if depth is 0, then check, if all the inputs are from the coinjoin
+                    if (depth == 0) {
+                        bool all_inputs_from_cj = true;
+                        for (auto input : spending_tx.inputs()) {
+                            if (!is_coinjoin_type(input.getSpentTx(), coinjoinType)) {
+                                all_inputs_from_cj = false;
+                                break;
+                            }
+                        }
+                        if (!all_inputs_from_cj) {
+                            continue;
+                        }
+                    }
+
+                    // Check if the spending tx is a consolidation tx
+                    auto consolidationType = blocksci::heuristics::getConsolidationType(spending_tx, inputOutputRatio);
+                    if (consolidationType == blocksci::heuristics::ConsolidationType::Certain) {
+                        result["certain"].push_back(spending_tx);
+                        // Stop processing this branch
+                        continue;
+                    }
+                    else if (consolidationType == blocksci::heuristics::ConsolidationType::Possible) {
+                        result["possible"].push_back(spending_tx);
+                        // Stop processing this branch
+                        continue;
+                    }
+                    
+                    // If it's not a consolidation, continue BFS
+                    bfs_queue.push({spending_tx, depth + 1});
+                }
+            }
+
+            // sort "certain" and "possible" txes by total output value
+            std::sort(result["certain"].begin(), result["certain"].end(), [](const Transaction &tx1, const Transaction &tx2) {
+                return std::accumulate(tx1.outputs().begin(), tx1.outputs().end(), 0, [](int64_t sum, const Output& output) {
+                    return sum + output.getValue();
+                }) > std::accumulate(tx2.outputs().begin(), tx2.outputs().end(), 0, [](int64_t sum, const Output& output) {
+                    return sum + output.getValue();
+                });
+            });
+
+            return {{tx, result}};
+        };
+
+
+        return chain[{start, stop}].mapReduce<MapType, decltype(map_func), decltype(reduce_func)>(map_func, reduce_func);
+    }, "Filter certain consolidation transactions", pybind11::arg("start"), pybind11::arg("stop"), pybind11::arg("inputOutputRatio"), pybind11::arg("coinjoinType"), pybind11::arg("hops"))
 
 
     .def("_segment_indexes", [](Blockchain &chain, BlockHeight start, BlockHeight stop, unsigned int cpuCount) {

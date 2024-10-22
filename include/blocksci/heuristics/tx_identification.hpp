@@ -11,6 +11,8 @@
 #include <blocksci/blocksci_export.h>
 #include <blocksci/chain/chain_fwd.hpp>
 #include <blocksci/scripts/scripts_fwd.hpp>
+#include <optional>
+#include <string>
 
 namespace blocksci {
     class DataAccess;
@@ -24,6 +26,10 @@ namespace blocksci {
         Trezor, SW, False
     };
 
+    enum class BLOCKSCI_EXPORT ConsolidationType {
+        Certain, Possible, BigRoundOutput, None
+    };
+
     bool BLOCKSCI_EXPORT isPeelingChain(const Transaction &tx);
     bool BLOCKSCI_EXPORT isCoinjoin(const Transaction &tx);
     CoinJoinResult BLOCKSCI_EXPORT isPossibleCoinjoin(const Transaction &tx, int64_t minBaseFee, double percentageFee, size_t maxDepth);
@@ -35,8 +41,13 @@ namespace blocksci {
     bool BLOCKSCI_EXPORT isWasabi1CoinJoin(const Transaction &tx);
     bool BLOCKSCI_EXPORT isWhirlpoolCoinJoin(const Transaction &tx);
 
-    HWWalletRemixResult BLOCKSCI_EXPORT isLongDormantInRemixes(const Transaction &tx);
-}}
+    bool BLOCKSCI_EXPORT isCoinjoinOfGivenType(const Transaction &tx, const std::string &type);
 
+    HWWalletRemixResult BLOCKSCI_EXPORT isLongDormantInRemixes(const Transaction &tx);
+
+    // consolidation
+
+    ConsolidationType BLOCKSCI_EXPORT getConsolidationType(const Transaction &tx, double inputOutputRatio = 2);
+}} // namespace blocksci
 
 #endif /* tx_identification_hpp */

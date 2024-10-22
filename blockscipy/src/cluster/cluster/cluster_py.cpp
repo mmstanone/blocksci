@@ -74,6 +74,14 @@ void init_cluster_manager(pybind11::module &s) {
     .def("tagged_clusters", [](ClusterManager &cm, const std::unordered_map<blocksci::Address, std::string> &tags) -> Iterator<TaggedCluster> {
         return cm.taggedClusters(tags);
     }, py::arg("tagged_addresses"), "Given a dictionary of tags, return a list of TaggedCluster objects for any clusters containing tagged scripts")
+    .def_static("create_coinjoin_clustering", [](Blockchain &chain, BlockHeight start, BlockHeight stop, const std::string &outputPath, bool overwrite, std::string coinjoinType) {
+        // py::scoped_ostream_redirect stream(std::cout, py::module::import("sys").attr("stdout"));
+        if (stop == -1) {
+            stop = chain.size();
+        }
+        auto range = chain[{start, stop}];
+        return ClusterManager::createCoinJoinClustering(range, outputPath, overwrite, coinjoinType);
+    }, py::arg("chain"), py::arg("start"), py::arg("stop"), py::arg("output_path"), py::arg("overwrite") = false, py::arg("coinjoin_type") = "None")
     ;
 }
 

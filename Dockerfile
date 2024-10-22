@@ -4,17 +4,15 @@ FROM ubuntu:20.04
 # Avoid prompts from apt-get
 ARG DEBIAN_FRONTEND=noninteractive
 
-# Update apt and install necessary packages
-RUN apt-get update && \
-    apt-get install -y software-properties-common && \
-    add-apt-repository ppa:ubuntu-toolchain-r/test -y && \
-    apt-get update && \
-    apt-get install -y cmake libtool autoconf libboost-filesystem-dev \
+RUN apt-get update && apt-get install -y software-properties-common
+RUN add-apt-repository ppa:ubuntu-toolchain-r/test -y && apt-get update
+RUN apt-get install -y cmake libtool autoconf libboost-filesystem-dev \
     libboost-iostreams-dev libboost-serialization-dev libboost-thread-dev \
     libboost-test-dev libssl-dev libjsoncpp-dev libcurl4-openssl-dev \
     libjsoncpp-dev libjsonrpccpp-dev libsnappy-dev zlib1g-dev libbz2-dev \
     liblz4-dev libzstd-dev libjemalloc-dev libsparsehash-dev python3-dev \
-    python3-pip pkg-config git g++-7 gcc-7 ffmpeg libcairo2 libcairo2-dev
+    python3-pip pkg-config git g++-7 gcc-7 ffmpeg libcairo2 libcairo2-dev curl
+
 
 ADD . /blocksci-compilable
 
@@ -38,11 +36,12 @@ RUN cd blocksci-compilable && \
     mkdir build && \
     cd build && \
     CC=gcc-7 CXX=g++-7 cmake -DCMAKE_BUILD_TYPE=Release .. && \
-    make && \
+    make -j258 && \
     make install
 
 
 # Install BlockSci Python bindings
+
 RUN cd blocksci-compilable && rm -rf blockscipy/build && \
     /root/.cargo/bin/uv venv && CC=gcc-7 CXX=g++-7 /root/.cargo/bin/uv run pip3 install -e blockscipy
 

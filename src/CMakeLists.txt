@@ -239,6 +239,7 @@ set(HEURISTICS_HEADERS
   ${BLOCKSCI_HEADER_PREFIX}/heuristics/change_address.hpp
   ${BLOCKSCI_HEADER_PREFIX}/heuristics/taint.hpp
   ${BLOCKSCI_HEADER_PREFIX}/heuristics/tx_identification.hpp
+  ${BLOCKSCI_HEADER_PREFIX}/heuristics/clustering_coinjoin.hpp
 )
 
 set(HEURISTICS_SOURCES
