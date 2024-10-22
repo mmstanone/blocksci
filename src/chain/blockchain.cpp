@@ -6,8 +6,12 @@
 //  Copyright © 2017 Harry Kalodner. All rights reserved.
 //
 
+#include <iostream>
+#include <fstream>
+
 #include <blocksci/chain/blockchain.hpp>
 #include <blocksci/chain/output.hpp>
+#include <blocksci/chain/coinjoin_utils.hpp>
 #include <blocksci/address/address.hpp>
 
 #include <internal/address_info.hpp>
@@ -26,7 +30,18 @@ namespace blocksci {
     
     Blockchain::Blockchain(std::unique_ptr<DataAccess> access_) : BlockRange{{0, access_->getChain().blockCount()}, access_.get()}, access(std::move(access_)) {}
     
-    Blockchain::Blockchain(const DataConfiguration &config) : Blockchain(std::make_unique<DataAccess>(config)) {}
+    
+    Blockchain::Blockchain(const DataConfiguration &config) : Blockchain(std::make_unique<DataAccess>(config)) {
+        if (config.chainConfig.coinName.find("test") != std::string::npos) {
+            std::cout << "You are using configuration for testnet/regtest chain." << std::endl;
+            std::cout << "Setting block boundaries used to detect CoinJoins to 0..." << std::endl;
+            blocksci::CoinjoinUtils::FirstSamouraiBlock = 0;
+            blocksci::CoinjoinUtils::FirstWasabiBlock = 0;
+            blocksci::CoinjoinUtils::FirstWasabi2Block = 0;
+            blocksci::CoinjoinUtils::FirstWasabiNoCoordAddressBlock = 0;
+        }
+
+    }
     
     Blockchain::Blockchain(const std::string &configPath, BlockHeight maxBlock) : Blockchain(loadBlockchainConfig(configPath, true, maxBlock)) {}
     

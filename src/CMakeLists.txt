@@ -247,7 +247,6 @@ set(HEURISTICS_SOURCES
   ${BLOCKSCI_SOURCE_PREFIX}/heuristics/change_address.cpp
   ${BLOCKSCI_SOURCE_PREFIX}/heuristics/taint.cpp
   ${BLOCKSCI_SOURCE_PREFIX}/heuristics/tx_identification.cpp
-  ${BLOCKSCI_SOURCE_PREFIX}/heuristics/clustering_coinjoin.cpp
 )
 
 set_source_files_properties(${BLOCKSCI_SOURCE_PREFIX}/scripts/bitcoin_bech32.cpp PROPERTIES COMPILE_FLAGS -Wno-everything)

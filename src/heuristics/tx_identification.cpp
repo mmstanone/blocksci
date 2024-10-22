@@ -663,57 +663,66 @@ namespace heuristics {
         if (tx.getBlockHeight() < blocksci::CoinjoinUtils::FirstWasabiBlock) {
             return false;
         }
-
         // before FirstWasabiNoCoordAddressBlock WW1 had different base denominations and fixed coordinators
         if (tx.getBlockHeight() < blocksci::CoinjoinUtils::FirstWasabiNoCoordAddressBlock) {
             // at least one output has to be a coord output
-            auto is_coord_output = std::any_of(tx.outputs().begin(), tx.outputs().end(), [](const Output& output) {
-
-                return output.isSpent() 
-                    && std::find(
-                        blocksci::CoinjoinUtils::ww1_coord_scripts.begin(), 
-                        blocksci::CoinjoinUtils::ww1_coord_scripts.end(), 
-                        output.getAddress().getScript().toPrettyString()
-                    ) != blocksci::CoinjoinUtils::ww1_coord_scripts.end();
-            });
 
             // get output values and their count
             std::unordered_map<int64_t, int> outputValues;
-            RANGES_FOR(auto output, tx.outputs()) {
-                outputValues[output.getValue()]++;
-            }
-            // check if there are at least 2 outputs with the same value
-            auto pr = std::max_element(
-                std::begin(outputValues), std::end(outputValues),
-                    [] (const std::pair<int64_t, int> & p1, const std::pair<int64_t, int> & p2) {
-                        return p1.second < p2.second;
+            bool is_coord_output = false;
+            bool more_than_two_outputs = false;
+
+            for (auto output: tx.outputs()) {
+                if (!more_than_two_outputs) {
+                    outputValues[output.getValue()]++;
+                    if (outputValues[output.getValue()] > 2) {
+                        more_than_two_outputs = true;
                     }
-            );
+                }
 
-            return is_coord_output && pr->second > 2;
-        }
 
-        // after FirstWasabiNoCoordAddressBlock WW1 had fixed base denomination and no coordinators
-        
-        // if all outputs are native segwit only
-        auto isNativeSegwitOnly = std::all_of(tx.outputs().begin(), tx.outputs().end(), [](const Output& output) {
-            return output.getAddress().type == AddressType::Enum::WITNESS_PUBKEYHASH;
-        });
-        if (!isNativeSegwitOnly) {
+                if (!is_coord_output && output.isSpent()) {
+                    auto address = output.getAddress().toString();
+                    if (address == "bc1qs604c7jv6amk4cxqlnvuxv26hv3e48cds4m0ew" || address == "bc1qa24tsgchvuxsaccp8vrnkfd85hrcpafg20kmjw")
+                    {
+                        is_coord_output = true;
+                    }
+                }
+
+                if (is_coord_output && more_than_two_outputs) {
+                    return true;
+                }
+            }
+
             return false;
         }
 
+        if (blocksci::heuristics::isWasabi2CoinJoin(tx)) {
+            return false;
+        }
+        // after FirstWasabiNoCoordAddressBlock WW1 had fixed base denomination and no coordinators
+
         // and there are at least 10 equal outputs
         std::unordered_map<int64_t, int> outputValues;
-        RANGES_FOR(auto output, tx.outputs()) {
+        for (auto output: tx.outputs()) {
+            // all inputs segwit only
+            if (output.getType() != AddressType::Enum::WITNESS_PUBKEYHASH) {
+                return false;
+            }
             outputValues[output.getValue()]++;
         }
+
+        if (outputValues.size() < 2) {
+            return false;
+        }
+
         auto mostFrequentEqualOutputCount = std::max_element(
             std::begin(outputValues), std::end(outputValues),
                 [] (const std::pair<int64_t, int> & p1, const std::pair<int64_t, int> & p2) {
                     return p1.second < p2.second;
                 }
         );
+
         if (mostFrequentEqualOutputCount->second < 10) {
             return false;
         }
@@ -726,15 +735,6 @@ namespace heuristics {
         // and the most frequent equal output is almost the base denomination 0.1 BTC +- 0.02 BTC
 
         if (mostFrequentEqualOutputCount->first < 0.08 * 1e8 || mostFrequentEqualOutputCount->first > 0.12 * 1e8) {
-            return false;
-        }
-
-        // and there are at least 2 unique outputs - mostFrequentEqualOutputCount size >= 2
-        if (outputValues.size() < 2) {
-            return false;
-        }
-        
-        if (blocksci::heuristics::isWasabi2CoinJoin(tx)) {
             return false;
         }
 
@@ -794,8 +794,7 @@ namespace heuristics {
                 count++;
             }
         }
-
-        return count > tx.outputCount() * 0.8;
+        return count > (tx.outputCount() * 0.8);
     }
 
     bool isWhirlpoolCoinJoin(const Transaction &tx) {

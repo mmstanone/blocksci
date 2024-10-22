@@ -118,6 +118,13 @@ void init_blockchain(py::class_<Blockchain> &cl) {
         }
         return pyAddresses;
     }, "Find all addresses beginning with the given prefix", pybind11::arg("prefix"))
+
+    .def("filter_fee_greater_than", [](Blockchain &chain, BlockHeight start, BlockHeight stop, uint64_t fee) {
+        return chain[{start, stop}].filter([fee](const Transaction &tx) {
+            return tx.fee() > fee;
+        });
+    }, "Filter the blockchain to only include transactions with a fee greater than the given value.", pybind11::arg("start"), pybind11::arg("stop"), pybind11::arg("fee"))
+    
     .def("find_friends_who_dont_pay", [](Blockchain &chain, const pybind11::dict &keys, BlockHeight start, BlockHeight stop) {
         std::unordered_set<std::string> umap;
         for (auto item : keys) {
@@ -186,23 +193,6 @@ void init_blockchain(py::class_<Blockchain> &cl) {
             return is_coinjoin_type(tx, coinjoin_type);
         });
     }, "Filter ww1 coinjoin transactions", pybind11::arg("start"), pybind11::arg("stop"), pybind11::arg("coinjoin_type"))
-    .def("filter_ww2_coinjoin_txes", [](Blockchain &chain, BlockHeight start, BlockHeight stop) {
-        return chain[{start, stop}].filter([](const Transaction &tx) {
-            return blocksci::heuristics::isWasabi2CoinJoin(tx);
-        });
-    }, "Filter ww2 coinjoin transactions", pybind11::arg("start"), pybind11::arg("stop"))
-
-    .def("filter_wp_coinjoin_txes", [](Blockchain &chain, BlockHeight start, BlockHeight stop) {
-        return chain[{start, stop}].filter([](const Transaction &tx) {
-            return blocksci::heuristics::isWhirlpoolCoinJoin(tx);
-        });
-    }, "Filter whirlpool coinjoin transactions", pybind11::arg("start"), pybind11::arg("stop"))
-
-    .def("filter_timestamped_txes", [](Blockchain &chain, BlockHeight start, BlockHeight stop) {
-        return chain[{start, stop}].filter([](const Transaction &tx) {
-            return tx.getTimeSeen().has_value() || tx.getTimestampSeen().has_value();
-        });
-    }, "Filter timestamped transactions", pybind11::arg("start"), pybind11::arg("stop"))
 
     .def("filter_in_keys", [](Blockchain &chain, const pybind11::dict &keys, BlockHeight start, BlockHeight stop) {
         std::unordered_set<std::string> umap;

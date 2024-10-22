@@ -149,10 +149,10 @@ namespace blocksci {
         CoinjoinUtils &operator=(const CoinjoinUtils &other) = default;
         CoinjoinUtils &operator=(CoinjoinUtils &&other) = default;
         ~CoinjoinUtils() = default;
-        static inline const int64_t FirstWasabi2Block = 741213;
-        static inline const int64_t FirstWasabiBlock = 530500;
-        static inline const int64_t FirstSamouraiBlock = 570000;
-        static inline const int64_t FirstWasabiNoCoordAddressBlock = 610000;
+        static inline int64_t FirstWasabi2Block = 741213;
+        static inline int64_t FirstWasabiBlock = 530500;
+        static inline int64_t FirstSamouraiBlock = 570000;
+        static inline int64_t FirstWasabiNoCoordAddressBlock = 610000;
 
         
     };
