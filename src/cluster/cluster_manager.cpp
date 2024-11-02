@@ -37,6 +37,9 @@
 #include <unordered_map>
 #include <utility>
 #include <thread>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
 
 namespace {
     template <typename Job>
@@ -123,6 +126,35 @@ namespace blocksci {
         void link_addresses(const Address &address1, const Address &address2) {
             auto firstAddressIndex = addressStarts.at(dedupType(address1.type)) + address1.scriptNum - 1;
             auto secondAddressIndex = addressStarts.at(dedupType(address2.type)) + address2.scriptNum - 1;
+            disjoinSets.unite(firstAddressIndex, secondAddressIndex);
+        }
+        
+        void resolveAll() {
+            segmentWork(0, disjoinSets.size(), 8, [&](uint32_t index) {
+                disjoinSets.find(index);
+            });
+        }
+        
+        uint32_t find(uint32_t index) {
+            return disjoinSets.find(index);
+        }
+    };
+
+    struct AddressDisjointSetsAroundCoinJoins {
+        DisjointSets disjoinSets;
+        std::unordered_map<Address, uint32_t> addressIndices;
+        
+        AddressDisjointSetsAroundCoinJoins(uint32_t size, std::unordered_map<Address, uint32_t> addressIndices_)
+            : disjoinSets(size), addressIndices(addressIndices_) {}
+
+        
+        uint32_t size() const {
+            return disjoinSets.size();
+        }
+        
+        void link_addresses(const Address &address1, const Address &address2) {
+            auto firstAddressIndex = addressIndices.at(address1);
+            auto secondAddressIndex = addressIndices.at(address2);
             disjoinSets.unite(firstAddressIndex, secondAddressIndex);
         }
         
@@ -225,9 +257,28 @@ namespace blocksci {
         
         return clusterCount;
     }
-    
-    void recordOrderedAddresses(const std::vector<uint32_t> &parent, std::vector<uint32_t> &clusterPositions, const std::unordered_map<DedupAddressType::Enum, uint32_t> &scriptStarts, std::ofstream &clusterAddressesFile) {
+
+    uint32_t remapClusterIdsForCoinJoins(std::vector<uint32_t> &clusterIDs) {
+        uint32_t placeholder = UINT32_MAX;
+        std::unordered_map<uint32_t, uint32_t> clusterIDMap;
+        uint32_t clusterCount = 0;
+
+        for (uint32_t &clusterID : clusterIDs) {
+            if (clusterID == placeholder) {
+                continue;
+            }
+            auto it = clusterIDMap.find(clusterID);
+            if (it == clusterIDMap.end()) {
+                clusterIDMap[clusterID] = clusterCount++;
+            }
+            clusterID = clusterIDMap[clusterID];
+        }
+
+        return clusterCount;
+    }
+
         
+    void recordOrderedAddresses(const std::vector<uint32_t> &parent, std::vector<uint32_t> &clusterPositions, const std::unordered_map<DedupAddressType::Enum, uint32_t> &scriptStarts, std::ofstream &clusterAddressesFile) {
         std::map<uint32_t, DedupAddressType::Enum> typeIndexes;
         for (auto &pair : scriptStarts) {
             auto it = typeIndexes.find(pair.second);
@@ -379,14 +430,14 @@ namespace blocksci {
         return createClusteringImpl(chain, changeHeuristic, outputPath, overwrite, ignoreCoinJoin);
     }
 
-    std::unordered_set<std::string> identifyCoinjoinTransactions(BlockRange &chain, const std::string &coinjoinType) {
+    std::unordered_set<Transaction> identifyCoinjoinTransactions(BlockRange &chain, const std::string &coinjoinType) {
         // Map function
-        auto mapFunc = [&](const BlockRange &blocks, int threadNum) {
-            std::unordered_set<std::string> localCoinjoinTransactions;
+        auto mapFunc = [&](const BlockRange &blocks) {
+            std::unordered_set<Transaction> localCoinjoinTransactions;
             for (const auto &block : blocks) {
                 for (const auto &tx : block) {
                     if (heuristics::isCoinjoinOfGivenType(tx, coinjoinType)) {
-                        localCoinjoinTransactions.insert(tx.getHash().GetHex());
+                        localCoinjoinTransactions.insert(tx);
                     }
                 }
             }
@@ -394,30 +445,29 @@ namespace blocksci {
         };
 
         // Reduce function
-        auto reduceFunc = [](std::unordered_set<std::string> &set1,
-                            std::unordered_set<std::string> &set2) -> std::unordered_set<std::string> & {
+        auto reduceFunc = [](std::unordered_set<Transaction> &set1,
+                            std::unordered_set<Transaction> &set2) -> std::unordered_set<Transaction> & {
             set1.insert(set2.begin(), set2.end());
             return set1;
         };
 
         // Perform mapReduce
-        return chain.mapReduce<std::unordered_set<std::string>>(mapFunc, reduceFunc);
+        return chain.mapReduce<std::unordered_set<Transaction>>(mapFunc, reduceFunc);
     }
 
 
     std::pair<std::vector<uint32_t>, uint32_t> createClustersForCoinJoin2(
         BlockRange &chain,
-        std::unordered_map<DedupAddressType::Enum, uint32_t> addressStarts,
-        uint32_t totalScriptCount,
-        const std::string &coinjoinType
+        std::string coinjoinType,
+        std::unordered_map<Address, uint32_t> collectedAddresses,
+        std::unordered_set<Transaction> coinjoinTransactions
     ) {
-        AddressDisjointSets ds(totalScriptCount, std::move(addressStarts));
+        AddressDisjointSetsAroundCoinJoins ds(collectedAddresses.size(), collectedAddresses);
 
-        // Identify coinjoins using mapReduce
-        auto coinjoinTransactions = identifyCoinjoinTransactions(chain, coinjoinType);
+        std::cout << "Created disjoint sets of size " << ds.size() << std::endl;
 
         // Map function to perform unions directly
-        auto mapFunc = [&](const BlockRange &blocks, int threadNum) {
+        auto mapFunc = [&](const BlockRange &blocks) {
             // For each block in the assigned block range
             for (const auto &block : blocks) {
                 // For each transaction in the block
@@ -426,14 +476,14 @@ namespace blocksci {
                     if (tx.isCoinbase()) continue;
 
                     // skip non-coinjoin transactions
-                    if (!coinjoinTransactions.count(tx.getHash().GetHex())) {
+                    if (!coinjoinTransactions.count(tx)) {
                         continue;
                     }
 
                     // <-- go this way
                     for (const auto &input: tx.inputs()) {
                         auto input_tx = input.getSpentTx();
-                        if (coinjoinTransactions.count(input_tx.getHash().GetHex())) {
+                        if (coinjoinTransactions.count(input_tx)) {
                             continue;
                         }
                         if (input_tx.outputCount() != 1) {
@@ -441,10 +491,18 @@ namespace blocksci {
                         }
 
                         auto inputAddress = input_tx.outputs()[0].getAddress();
+                        if (collectedAddresses.find(inputAddress) == collectedAddresses.end()) {
+                            continue;
+                        }
                         for (const auto &next_level_input: input_tx.inputs()) {
                             auto next_level_input_tx = next_level_input.getSpentTx();
 
                             auto next_level_inputAddress = next_level_input.getAddress();
+
+                            if (coinjoinTransactions.count(next_level_input_tx)) {
+                                continue;
+                            }
+
                             ds.link_addresses(inputAddress, next_level_inputAddress);
                         }
                     }
@@ -455,24 +513,38 @@ namespace blocksci {
                         if (!output.isSpent()) continue;
 
                         auto nextTx = output.getSpendingTx().value();
-                        auto nextTxNum = nextTx.txNum;
 
                         if (nextTx.outputCount() != 1) {
                             continue;
                         }
 
+                        auto nextTxOutputAddress = nextTx.outputs()[0].getAddress();
+
+                        if (coinjoinTransactions.count(nextTx)) {
+                            continue;
+                        }
+
+
+                        if (collectedAddresses.find(nextTxOutputAddress) == collectedAddresses.end()) {
+                            continue;
+                        }
+
                         for (const auto &nextLevelInput: nextTx.inputs()) {
                             auto nextLevelInputAddress = nextLevelInput.getAddress();
-                            ds.link_addresses(nextTx.outputs()[0].getAddress(), nextLevelInputAddress);
+                            if (collectedAddresses.find(nextTxOutputAddress) == collectedAddresses.end()) {
+                                continue;
+                            }
+
+                            ds.link_addresses(nextTxOutputAddress, nextLevelInputAddress);
                         }
                     }
                 }
             }
-            return 0; // Return type as required by mapReduce
+            return 0;
         };
-
-        // Reduce function (no-op in this case)
-        auto reduceFunc = [](int &, int &) -> int & { static int dummy = 0; return dummy; };
+        
+        // noop reduce function
+        auto reduceFunc = [](int a, int b) -> int { return a + b; };
 
         chain.mapReduce<int>(mapFunc, reduceFunc);
 
@@ -483,33 +555,238 @@ namespace blocksci {
             parents[i] = ds.find(i);
         }
 
-        uint32_t clusterCount = remapClusterIds(parents);
-
+        uint32_t clusterCount = remapClusterIdsForCoinJoins(parents);
         return std::make_pair(parents, clusterCount);
     }
 
+    std::unordered_map<Address, uint32_t> collectAddressesWithinHops(
+        const std::unordered_set<Transaction>& startTransactions,
+        int maxHops
+    ) {
+        std::unordered_map<Address, uint32_t> collectedAddresses;
+        uint32_t index = 0;
+        std::unordered_set<Transaction> transactionsToProcess = startTransactions;
+        std::unordered_set<Transaction> processedTransactions;
 
-    ClusterManager ClusterManager::createCoinJoinClustering(BlockRange &chain, const std::string &outputPath, bool overwrite, std::string coinjoinType) {
-        prepareClusterDataLocation(outputPath, overwrite);
+        for (int hop = 0; hop < maxHops; ++hop) {
+            std::unordered_set<Transaction> nextTransactions;
 
-        auto &scripts = chain.getAccess().getScripts();
-        size_t totalScriptCount = scripts.totalAddressCount();
+            for (const auto& tx : transactionsToProcess) {
+                if (processedTransactions.count(tx)) continue;
+                processedTransactions.insert(tx);
 
-        std::unordered_map<DedupAddressType::Enum, uint32_t> scriptStarts;
-        {
-            uint32_t start = 0;
-            for (auto dedupType : DedupAddressType::allArray()) {
-                scriptStarts[dedupType] = start;
-                start += scripts.scriptCount(dedupType);
+                // Collect addresses from inputs
+                for (const auto& input : tx.inputs()) {
+                    auto [_, res] = collectedAddresses.insert(std::make_pair(input.getAddress(), index));
+                    if (res) 
+                        index++;
+
+                    // Get previous transaction
+                    auto prevTx = input.getSpentTx();
+                    if (processedTransactions.count(prevTx) == 0) {
+                        nextTransactions.insert(prevTx);
+                    }
+                }
+
+                // Collect addresses from outputs
+                for (const auto& output : tx.outputs()) {
+                    auto [_, res] = collectedAddresses.insert(std::make_pair(output.getAddress(), index));
+                    if (res) 
+                        index++;
+
+                    // Get spending transaction if any
+                    if (output.isSpent()) {
+                        auto nextTx = output.getSpendingTx().value();
+                        if (processedTransactions.count(nextTx) == 0) {
+                            nextTransactions.insert(nextTx);
+                        }
+                    }
+                }
+            }
+
+            transactionsToProcess = std::move(nextTransactions);
+        }
+
+        return collectedAddresses;
+    }
+
+    void recordOrderedAddressesForCoinJoins(
+        const std::vector<uint32_t> &clusterIDs,
+        std::vector<uint32_t> &clusterPositions,
+        const std::unordered_map<DedupAddressType::Enum, uint32_t> &scriptStarts,
+        const ScriptAccess &scripts,
+        std::ofstream &clusterAddressesFile
+    ) {
+        size_t totalAddresses = clusterIDs.size();
+        std::vector<DedupAddress> orderedScripts;
+
+        // Build clusterPositions
+        for (uint32_t clusterID : clusterIDs) {
+            if (clusterID != UINT32_MAX) {
+                clusterPositions[clusterID + 1]++;
             }
         }
 
-        // Use createClustersForCoinJoin with mapReduce
-        auto [parents, clusterCount] = createClustersForCoinJoin2(chain, scriptStarts, static_cast<uint32_t>(totalScriptCount), coinjoinType);
+        for (size_t i = 1; i < clusterPositions.size(); ++i) {
+            clusterPositions[i] += clusterPositions[i - 1];
+        }
 
-        serializeClusterData(scripts, outputPath, parents, scriptStarts, clusterCount);
+        // Prepare orderedScripts
+        orderedScripts.resize(clusterPositions.back());
+
+        // For tracking current position in each cluster
+        std::vector<uint32_t> currentPositions = clusterPositions;
+
+        // Iterate over all addresses
+        for (size_t i = 0; i < totalAddresses; ++i) {
+            uint32_t clusterID = clusterIDs[i];
+            if (clusterID == UINT32_MAX) {
+                continue; // Address not in any cluster
+            }
+
+            uint32_t &position = currentPositions[clusterID];
+            // Reconstruct DedupAddress from global index
+            DedupAddressType::Enum addressType;
+            uint32_t scriptNum;
+
+            // Determine addressType and scriptNum based on global index 'i'
+            for (const auto &pair : scriptStarts) {
+                DedupAddressType::Enum type = pair.first;
+                uint32_t startIndex = pair.second;
+                uint32_t endIndex = startIndex + scripts.scriptCount(type);
+
+                if (i >= startIndex && i < endIndex) {
+                    addressType = type;
+                    scriptNum = static_cast<uint32_t>((i - startIndex) + 1); // +1 to adjust back to 1-based scriptNum
+                    break;
+                }
+            }
+
+            orderedScripts[position] = DedupAddress(scriptNum, addressType);
+            position++;
+        }
+
+        // Write orderedScripts to file
+        clusterAddressesFile.write(reinterpret_cast<char *>(orderedScripts.data()),
+                                static_cast<std::streamsize>(sizeof(DedupAddress) * orderedScripts.size()));
+    }
+
+
+    void serializeClusterDataForCoinJoins(
+        const ScriptAccess &scripts,
+        const std::string &outputPath,
+        const std::vector<uint32_t> &clusterIDs,
+        const std::unordered_map<DedupAddressType::Enum, uint32_t> &scriptStarts,
+        uint32_t clusterCount
+    ) {
+        // Prepare clusterPositions
+        std::vector<uint32_t> clusterPositions(clusterCount + 1, 0);
+
+        // Open clusterAddressesFile
+        std::string addressesFile = ClusterAccess::addressesFilePath(outputPath);
+        std::ofstream clusterAddressesFile(addressesFile, std::ios::binary);
+
+        // Call modified recordOrderedAddressesForCoinJoins asynchronously
+        auto recordOrdered = std::async(std::launch::async,
+            recordOrderedAddressesForCoinJoins, clusterIDs, std::ref(clusterPositions),
+            std::ref(scriptStarts), std::ref(scripts), std::ref(clusterAddressesFile));
+
+        // Write cluster offsets
+        std::string offsetFile = ClusterAccess::offsetFilePath(outputPath);
+        std::ofstream clusterOffsetFile(offsetFile, std::ios::binary);
+
+        // Wait for recordOrdered to finish
+        recordOrdered.get();
+
+        clusterOffsetFile.write(reinterpret_cast<char *>(clusterPositions.data()),
+                                sizeof(uint32_t) * clusterPositions.size());
+
+        // Write cluster index files asynchronously
+        std::vector<std::future<void>> futures;
+        for (auto dedupType : DedupAddressType::allArray()) {
+            futures.push_back(std::async(std::launch::async, [&, dedupType]() {
+                uint32_t startIndex = scriptStarts.at(dedupType);
+                uint32_t totalCount = scripts.scriptCount(dedupType);
+                std::string indexFilePath = ClusterAccess::typeIndexFilePath(outputPath, dedupType);
+                std::ofstream indexFile(indexFilePath, std::ios::binary);
+
+                indexFile.write(reinterpret_cast<const char *>(clusterIDs.data() + startIndex),
+                                sizeof(uint32_t) * totalCount);
+            }));
+        }
+
+        // Wait for all futures to complete
+        for (auto &fut : futures) {
+            fut.get();
+        }
+    }
+
+
+    ClusterManager ClusterManager::createCoinJoinClustering(
+        BlockRange &chain,
+        const std::string &outputPath,
+        bool overwrite,
+        std::string coinjoinType
+    ) {
+        prepareClusterDataLocation(outputPath, overwrite);
+
+        auto &scripts = chain.getAccess().getScripts();
+        auto coinjoinTransactions = identifyCoinjoinTransactions(chain, coinjoinType);
+        auto collectedAddresses = collectAddressesWithinHops(coinjoinTransactions, 2);
+
+        std::cout << "Collected " << collectedAddresses.size() << " addresses" << std::endl;
+        // Create clusters
+        auto [parents, clusterCount] = createClustersForCoinJoin2(chain, coinjoinType, collectedAddresses, coinjoinTransactions);
+
+        std::cout << "Preparing to serialize cluster data" << std::endl;
+
+        size_t totalAddressCount = scripts.totalAddressCount();
+
+        std::unordered_map<DedupAddressType::Enum, uint32_t> scriptStarts;
+        {
+            std::vector<uint32_t> starts(DedupAddressType::size);
+
+            for (size_t i = 0; i < DedupAddressType::size; i++) {
+                DedupAddressType::Enum type = static_cast<DedupAddressType::Enum>(i);
+                if (i > 0) {
+                    starts[i] = scripts.scriptCount(static_cast<DedupAddressType::Enum>(i - 1)) + starts[i - 1];
+                }
+                scriptStarts[type] = starts[i];
+            }
+        }
+
+                // Create a vector of addresses ordered by their index in `collectedAddresses`
+        std::vector<Address> addresses(collectedAddresses.size());
+            for (const auto &pair : collectedAddresses) {
+                const Address &address = pair.first;
+                uint32_t index = pair.second;
+                addresses[index] = address;
+            }
+
+
+        // Prepare clusterIDs array
+        std::vector<uint32_t> clusterIDs(totalAddressCount, UINT32_MAX); // Initialize to UINT32_MAX or -1
+
+        // Assign cluster IDs to global indices
+        for (size_t i = 0; i < addresses.size(); ++i) {
+            const Address &address = addresses[i];
+            DedupAddressType::Enum addressType = dedupType(address.type);
+            uint32_t scriptNum = address.scriptNum;
+            uint32_t globalIndex = scriptStarts[addressType] + (scriptNum - 1);
+            clusterIDs[globalIndex] = parents[i];
+        }
+
+        // Remap cluster IDs to be contiguous
+        uint32_t remappedClusterCount = remapClusterIdsForCoinJoins(clusterIDs);
+
+        std::cout << "Serializing cluster data" << std::endl;
+
+        serializeClusterDataForCoinJoins(scripts, outputPath, clusterIDs, scriptStarts, remappedClusterCount);
+
+        std::cout << "Serialized" << std::endl;
         return {filesystem::path{outputPath}.str(), chain.getAccess()};
     }
+
 
 
 } // namespace blocksci

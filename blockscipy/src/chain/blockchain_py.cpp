@@ -194,16 +194,9 @@ void init_blockchain(py::class_<Blockchain> &cl) {
         });
     }, "Filter ww1 coinjoin transactions", pybind11::arg("start"), pybind11::arg("stop"), pybind11::arg("coinjoin_type"))
 
-    .def("filter_in_keys", [](Blockchain &chain, const pybind11::dict &keys, BlockHeight start, BlockHeight stop) {
-        std::unordered_set<std::string> umap;
-        for (auto item : keys) {
-            std::string key = py::str(item.first).cast<std::string>();
-            umap.insert(key);
-        };
-        std::cout << "Size of keys: " << umap.size() << std::endl;
-
-        return chain[{start, stop}].filter([&umap](const Transaction &tx) {
-            return umap.find(tx.getHash().GetHex()) != umap.end();
+    .def("filter_in_keys", [](Blockchain &chain, const std::unordered_set<std::string> &items, BlockHeight start, BlockHeight stop) {
+        return chain[{start, stop}].filter([&items](const Transaction &tx) {
+            return items.find(tx.getHash().GetHex()) != items.end();
         });
     }, "Filter the blockchain to only include txes with the given keys", pybind11::arg("keys"), pybind11::arg("start"), pybind11::arg("stop"))
 

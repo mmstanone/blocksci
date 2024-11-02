@@ -75,7 +75,7 @@ void init_cluster_manager(pybind11::module &s) {
         return cm.taggedClusters(tags);
     }, py::arg("tagged_addresses"), "Given a dictionary of tags, return a list of TaggedCluster objects for any clusters containing tagged scripts")
     .def_static("create_coinjoin_clustering", [](Blockchain &chain, BlockHeight start, BlockHeight stop, const std::string &outputPath, bool overwrite, std::string coinjoinType) {
-        // py::scoped_ostream_redirect stream(std::cout, py::module::import("sys").attr("stdout"));
+        py::scoped_ostream_redirect stream(std::cout, py::module::import("sys").attr("stdout"));
         if (stop == -1) {
             stop = chain.size();
         }
