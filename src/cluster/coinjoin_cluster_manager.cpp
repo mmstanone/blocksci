@@ -6,39 +6,36 @@
 //
 //
 
-#include <blocksci/cluster/coinjoin_cluster_manager.hpp>
-#include <blocksci/cluster/cluster.hpp>
-#include <blocksci/cluster/cluster_manager.hpp>
+#include <dset/dset.h>
+#include <wjfilesystem/path.h>
 
 #include <blocksci/chain/blockchain.hpp>
 #include <blocksci/chain/input.hpp>
 #include <blocksci/chain/range_util.hpp>
+#include <blocksci/cluster/cluster.hpp>
+#include <blocksci/cluster/cluster_manager.hpp>
+#include <blocksci/cluster/coinjoin_cluster_manager.hpp>
+#include <blocksci/cluster/coinjoin_clustering_heuristics.hpp>
 #include <blocksci/core/dedup_address.hpp>
 #include <blocksci/heuristics/change_address.hpp>
 #include <blocksci/heuristics/tx_identification.hpp>
 #include <blocksci/scripts/scripthash_script.hpp>
-
+#include <fstream>
+#include <future>
 #include <internal/address_info.hpp>
 #include <internal/cluster_access.hpp>
 #include <internal/data_access.hpp>
 #include <internal/progress_bar.hpp>
 #include <internal/script_access.hpp>
-
-#include <dset/dset.h>
-
-#include <wjfilesystem/path.h>
-
-#include <range/v3/view/iota.hpp>
-#include <range/v3/range_for.hpp>
-#include <fstream>
-#include <future>
 #include <map>
-#include <vector>
+#include <nlohmann/json.hpp>
+#include <range/v3/range_for.hpp>
+#include <range/v3/view/iota.hpp>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
-#include <thread>
-#include <nlohmann/json.hpp>
+#include <vector>
 
 using json = nlohmann::json;
 
@@ -46,7 +43,7 @@ namespace {
     template <typename Job>
     void segmentWork(uint32_t start, uint32_t end, uint32_t segmentCount, Job job) {
         uint32_t total = end - start;
-        
+
         // Don't partition over threads if there are less items than segment count
         if (total < segmentCount) {
             for (uint32_t i = start; i < end; ++i) {
@@ -54,12 +51,12 @@ namespace {
             }
             return;
         }
-        
+
         auto segmentSize = total / segmentCount;
         auto segmentsRemaining = total % segmentCount;
         std::vector<std::pair<uint32_t, uint32_t>> segments;
         uint32_t i = 0;
-        while(i < total) {
+        while (i < total) {
             uint32_t startSegment = i;
             i += segmentSize;
             if (segmentsRemaining > 0) {
@@ -72,33 +69,39 @@ namespace {
         std::vector<std::thread> threads;
         for (uint32_t i = 0; i < segmentCount - 1; i++) {
             auto segment = segments[i];
-            threads.emplace_back([segment, &job](){
+            threads.emplace_back([segment, &job]() {
                 for (uint32_t i = segment.first; i < segment.second; i++) {
                     job(i);
                 }
             });
         }
-        
+
         auto segment = segments.back();
         for (uint32_t i = segment.first; i < segment.second; i++) {
             job(i);
         }
-        
-        for (auto& thread : threads) {
+
+        for (auto &thread : threads) {
             thread.join();
         }
     }
-}
+}  // namespace
 
 namespace blocksci {
-    CoinjoinClusterManager::CoinjoinClusterManager(const std::string &baseDirectory, DataAccess &access_) : access(std::make_unique<ClusterAccess>(baseDirectory, access_)), clusterCount(access->clusterCount()) {}
-    
-    CoinjoinClusterManager::CoinjoinClusterManager(CoinjoinClusterManager && other) = default;
-    
-    CoinjoinClusterManager &CoinjoinClusterManager::operator=(CoinjoinClusterManager && other) = default;
-    
+
+    void AddressDisjointSets::resolveAll() {
+        segmentWork(0, disjoinSets.size(), 8, [&](uint32_t index) { disjoinSets.find(index); });
+    }
+
+    CoinjoinClusterManager::CoinjoinClusterManager(const std::string &baseDirectory, DataAccess &access_)
+        : access(std::make_unique<ClusterAccess>(baseDirectory, access_)), clusterCount(access->clusterCount()) {}
+
+    CoinjoinClusterManager::CoinjoinClusterManager(CoinjoinClusterManager &&other) = default;
+
+    CoinjoinClusterManager &CoinjoinClusterManager::operator=(CoinjoinClusterManager &&other) = default;
+
     CoinjoinClusterManager::~CoinjoinClusterManager() = default;
-    
+
     Cluster CoinjoinClusterManager::getCluster(const Address &address) const {
         auto clusterNum = access->getClusterNum(RawAddress{address.scriptNum, address.type});
         if (clusterNum == UINT32_MAX) {
@@ -107,50 +110,24 @@ namespace blocksci {
         }
         return Cluster(clusterNum + 1, *access);
     }
-    
-    ranges::any_view<Cluster, ranges::category::random_access | ranges::category::sized> CoinjoinClusterManager::getClusters() const {
-        return ranges::views::ints(0u, clusterCount)
-        | ranges::views::transform([&](uint32_t clusterNum) { return Cluster(clusterNum, *access); });
-    }
-    
-    ranges::any_view<TaggedCluster> CoinjoinClusterManager::taggedClusters(const std::unordered_map<Address, std::string> &tags) const {
-        return getClusters() | ranges::views::transform([tags](Cluster && cluster) -> ranges::optional<TaggedCluster> {
-            return cluster.getTaggedUnsafe(tags);
-        }) | flatMapOptionals();
+
+    ranges::any_view<Cluster, ranges::category::random_access | ranges::category::sized>
+    CoinjoinClusterManager::getClusters() const {
+        return ranges::views::ints(0u, clusterCount) |
+               ranges::views::transform([&](uint32_t clusterNum) { return Cluster(clusterNum, *access); });
     }
 
-    struct AddressDisjointSets{
-        DisjointSets disjoinSets;
-        std::unordered_map<Address, uint32_t> addressIndices;
-        
-        AddressDisjointSets(uint32_t size, std::unordered_map<Address, uint32_t> addressIndices_)
-            : disjoinSets(size), addressIndices(addressIndices_) {}
+    ranges::any_view<TaggedCluster> CoinjoinClusterManager::taggedClusters(
+        const std::unordered_map<Address, std::string> &tags) const {
+        return getClusters() | ranges::views::transform([tags](Cluster &&cluster) -> ranges::optional<TaggedCluster> {
+                   return cluster.getTaggedUnsafe(tags);
+               }) |
+               flatMapOptionals();
+    }
 
-        
-        uint32_t size() const {
-            return disjoinSets.size();
-        }
-        
-        void link_addresses(const Address &address1, const Address &address2) {
-            auto firstAddressIndex = addressIndices.at(address1);
-            auto secondAddressIndex = addressIndices.at(address2);
-            disjoinSets.unite(firstAddressIndex, secondAddressIndex);
-        }
-        
-        void resolveAll() {
-            segmentWork(0, disjoinSets.size(), 8, [&](uint32_t index) {
-                disjoinSets.find(index);
-            });
-        }
-        
-        uint32_t find(uint32_t index) {
-            return disjoinSets.find(index);
-        }
-    };
-    
     // void linkScripthashNested(DataAccess &access, AddressDisjointSets &ds) {
     //     auto scriptHashCount = access.getScripts().scriptCount(DedupAddressType::SCRIPTHASH);
-        
+
     //     segmentWork(1, scriptHashCount + 1, 8, [&ds, &access](uint32_t index) {
     //         Address pointer(index, AddressType::SCRIPTHASH, access);
     //         script::ScriptHash scripthash{index, access};
@@ -160,8 +137,6 @@ namespace blocksci {
     //         }
     //     });
     // }
-    
-    
 
     uint32_t remapClusterIdsForCoinJoins(std::vector<uint32_t> &clusterIDs) {
         uint32_t placeholder = UINT32_MAX;
@@ -182,7 +157,6 @@ namespace blocksci {
         return clusterCount;
     }
 
-
     std::unordered_set<Transaction> identifyCoinjoinTransactions(BlockRange &chain, const std::string &coinjoinType) {
         // Map function
         auto mapFunc = [&](const BlockRange &blocks) {
@@ -199,7 +173,7 @@ namespace blocksci {
 
         // Reduce function
         auto reduceFunc = [](std::unordered_set<Transaction> &set1,
-                            std::unordered_set<Transaction> &set2) -> std::unordered_set<Transaction> & {
+                             std::unordered_set<Transaction> &set2) -> std::unordered_set<Transaction> & {
             set1.insert(set2.begin(), set2.end());
             return set1;
         };
@@ -211,28 +185,24 @@ namespace blocksci {
     template <typename LinkingFunc>
     std::vector<std::pair<Address, Address>> processTransaction(const Transaction &tx, LinkingFunc &&linkingFunc) {
         std::vector<std::pair<Address, Address>> pairsToUnion;
-        
+
         if (!tx.isCoinbase()) {
             auto inputs = tx.inputs();
             auto firstAddress = inputs[0].getAddress();
             for (uint16_t i = 1; i < inputs.size(); i++) {
                 pairsToUnion.emplace_back(firstAddress, inputs[i].getAddress());
             }
-            
-            RANGES_FOR(auto change, linkingFunc(tx)) {
-                pairsToUnion.emplace_back(change.getAddress(), firstAddress);
-            }
+
+            RANGES_FOR(auto change, linkingFunc(tx)) { pairsToUnion.emplace_back(change.getAddress(), firstAddress); }
         }
         return pairsToUnion;
     }
 
-
     std::pair<std::vector<uint32_t>, uint32_t> createClusters(
-        BlockRange &chain,
-        std::unordered_map<Address, uint32_t> collectedAddresses,
-        std::unordered_set<Transaction> coinjoinTransactions
-    ) {
-        AddressDisjointSets ds(collectedAddresses.size(), collectedAddresses);
+        BlockRange &chain, std::unordered_map<Address, uint32_t> collectedAddresses,
+        std::unordered_set<Transaction> coinjoinTransactions,
+        const blocksci::coinjoin_heuristics::ClusteringHeuristic &heuristic) {
+        blocksci::AddressDisjointSets ds(collectedAddresses.size(), collectedAddresses);
 
         std::cout << "Created disjoint sets of size " << ds.size() << std::endl;
 
@@ -250,69 +220,12 @@ namespace blocksci {
                         continue;
                     }
 
-                    // <-- go this way
-                    for (const auto &input: tx.inputs()) {
-                        auto input_tx = input.getSpentTx();
-                        if (coinjoinTransactions.count(input_tx)) {
-                            continue;
-                        }
-                        if (input_tx.outputCount() != 1) {
-                            continue;
-                        }
-
-                        auto inputAddress = input_tx.outputs()[0].getAddress();
-                        if (collectedAddresses.find(inputAddress) == collectedAddresses.end()) {
-                            continue;
-                        }
-                        for (const auto &next_level_input: input_tx.inputs()) {
-                            auto next_level_input_tx = next_level_input.getSpentTx();
-
-                            auto next_level_inputAddress = next_level_input.getAddress();
-
-                            if (coinjoinTransactions.count(next_level_input_tx)) {
-                                continue;
-                            }
-
-                            ds.link_addresses(inputAddress, next_level_inputAddress);
-                        }
-                    }
-
-
-                    // --> go this way
-                    for (const auto &output : tx.outputs()) {
-                        if (!output.isSpent()) continue;
-
-                        auto nextTx = output.getSpendingTx().value();
-
-                        if (nextTx.outputCount() != 1) {
-                            continue;
-                        }
-
-                        auto nextTxOutputAddress = nextTx.outputs()[0].getAddress();
-
-                        if (coinjoinTransactions.count(nextTx)) {
-                            continue;
-                        }
-
-
-                        if (collectedAddresses.find(nextTxOutputAddress) == collectedAddresses.end()) {
-                            continue;
-                        }
-
-                        for (const auto &nextLevelInput: nextTx.inputs()) {
-                            auto nextLevelInputAddress = nextLevelInput.getAddress();
-                            if (collectedAddresses.find(nextTxOutputAddress) == collectedAddresses.end()) {
-                                continue;
-                            }
-
-                            ds.link_addresses(nextTxOutputAddress, nextLevelInputAddress);
-                        }
-                    }
+                    heuristic(tx, coinjoinTransactions, ds, collectedAddresses);
                 }
             }
             return 0;
         };
-        
+
         // noop reduce function
         auto reduceFunc = [](int a, int b) -> int { return a + b; };
 
@@ -330,9 +243,7 @@ namespace blocksci {
     }
 
     std::unordered_map<Address, uint32_t> collectAddressesWithinHops(
-        const std::unordered_set<Transaction>& startTransactions,
-        int maxHops
-    ) {
+        const std::unordered_set<Transaction> &startTransactions, int maxHops) {
         std::unordered_map<Address, uint32_t> collectedAddresses;
         uint32_t index = 0;
         std::unordered_set<Transaction> transactionsToProcess = startTransactions;
@@ -341,15 +252,14 @@ namespace blocksci {
         for (int hop = 0; hop < maxHops; ++hop) {
             std::unordered_set<Transaction> nextTransactions;
 
-            for (const auto& tx : transactionsToProcess) {
+            for (const auto &tx : transactionsToProcess) {
                 if (processedTransactions.count(tx)) continue;
                 processedTransactions.insert(tx);
 
                 // Collect addresses from inputs
-                for (const auto& input : tx.inputs()) {
+                for (const auto &input : tx.inputs()) {
                     auto [_, res] = collectedAddresses.insert(std::make_pair(input.getAddress(), index));
-                    if (res) 
-                        index++;
+                    if (res) index++;
 
                     // Get previous transaction
                     auto prevTx = input.getSpentTx();
@@ -359,10 +269,9 @@ namespace blocksci {
                 }
 
                 // Collect addresses from outputs
-                for (const auto& output : tx.outputs()) {
+                for (const auto &output : tx.outputs()) {
                     auto [_, res] = collectedAddresses.insert(std::make_pair(output.getAddress(), index));
-                    if (res) 
-                        index++;
+                    if (res) index++;
 
                     // Get spending transaction if any
                     if (output.isSpent()) {
@@ -380,13 +289,9 @@ namespace blocksci {
         return collectedAddresses;
     }
 
-    void recordOrderedAddresses(
-        const std::vector<uint32_t> &clusterIDs,
-        std::vector<uint32_t> &clusterPositions,
-        const std::unordered_map<DedupAddressType::Enum, uint32_t> &scriptStarts,
-        const ScriptAccess &scripts,
-        std::ofstream &clusterAddressesFile
-    ) {
+    void recordOrderedAddresses(const std::vector<uint32_t> &clusterIDs, std::vector<uint32_t> &clusterPositions,
+                                const std::unordered_map<DedupAddressType::Enum, uint32_t> &scriptStarts,
+                                const ScriptAccess &scripts, std::ofstream &clusterAddressesFile) {
         size_t totalAddresses = clusterIDs.size();
         std::vector<DedupAddress> orderedScripts;
 
@@ -411,13 +316,13 @@ namespace blocksci {
         for (size_t i = 0; i < totalAddresses; ++i) {
             uint32_t clusterID = clusterIDs[i];
             if (clusterID == UINT32_MAX) {
-                continue; // Address not in any cluster
+                continue;  // Address not in any cluster
             }
 
             uint32_t &position = currentPositions[clusterID];
             // Reconstruct DedupAddress from global index
-            DedupAddressType::Enum addressType;
-            uint32_t scriptNum;
+            DedupAddressType::Enum addressType = DedupAddressType::MULTISIG;
+            uint32_t scriptNum = 0;
 
             // Determine addressType and scriptNum based on global index 'i'
             for (const auto &pair : scriptStarts) {
@@ -427,7 +332,7 @@ namespace blocksci {
 
                 if (i >= startIndex && i < endIndex) {
                     addressType = type;
-                    scriptNum = static_cast<uint32_t>((i - startIndex) + 1); // +1 to adjust back to 1-based scriptNum
+                    scriptNum = static_cast<uint32_t>((i - startIndex) + 1);  // +1 to adjust back to 1-based scriptNum
                     break;
                 }
             }
@@ -438,17 +343,13 @@ namespace blocksci {
 
         // Write orderedScripts to file
         clusterAddressesFile.write(reinterpret_cast<char *>(orderedScripts.data()),
-                                static_cast<std::streamsize>(sizeof(DedupAddress) * orderedScripts.size()));
+                                   static_cast<std::streamsize>(sizeof(DedupAddress) * orderedScripts.size()));
     }
 
-
-    void serializeCoinjoinClusterData(
-        const ScriptAccess &scripts,
-        const std::string &outputPath,
-        const std::vector<uint32_t> &clusterIDs,
-        const std::unordered_map<DedupAddressType::Enum, uint32_t> &scriptStarts,
-        uint32_t clusterCount
-    ) {
+    void serializeCoinjoinClusterData(const ScriptAccess &scripts, const std::string &outputPath,
+                                      const std::vector<uint32_t> &clusterIDs,
+                                      const std::unordered_map<DedupAddressType::Enum, uint32_t> &scriptStarts,
+                                      uint32_t clusterCount) {
         // Prepare clusterPositions
         std::vector<uint32_t> clusterPositions(clusterCount + 1, 0);
 
@@ -457,9 +358,9 @@ namespace blocksci {
         std::ofstream clusterAddressesFile(addressesFile, std::ios::binary);
 
         // Call modified recordOrderedAddressesForCoinJoins asynchronously
-        auto recordOrdered = std::async(std::launch::async,
-            recordOrderedAddresses, clusterIDs, std::ref(clusterPositions),
-            std::ref(scriptStarts), std::ref(scripts), std::ref(clusterAddressesFile));
+        auto recordOrdered =
+            std::async(std::launch::async, recordOrderedAddresses, clusterIDs, std::ref(clusterPositions),
+                       std::ref(scriptStarts), std::ref(scripts), std::ref(clusterAddressesFile));
 
         // Write cluster offsets
         std::string offsetFile = ClusterAccess::offsetFilePath(outputPath);
@@ -491,13 +392,9 @@ namespace blocksci {
         }
     }
 
-
     CoinjoinClusterManager CoinjoinClusterManager::createClustering(
-        BlockRange &chain,
-        const std::string &outputPath,
-        bool overwrite,
-        std::string coinjoinType
-    ) {
+        BlockRange &chain, const blocksci::coinjoin_heuristics::ClusteringHeuristic &clusteringFunc,
+        const std::string &outputPath, bool overwrite, std::string coinjoinType) {
         ClusterManager::prepareClusterDataLocation(outputPath, overwrite);
 
         auto &scripts = chain.getAccess().getScripts();
@@ -506,7 +403,7 @@ namespace blocksci {
 
         std::cout << "Collected " << collectedAddresses.size() << " addresses" << std::endl;
         // Create clusters
-        auto [parents, clusterCount] = createClusters(chain, collectedAddresses, coinjoinTransactions);
+        auto [parents, clusterCount] = createClusters(chain, collectedAddresses, coinjoinTransactions, clusteringFunc);
 
         std::cout << "Preparing to serialize cluster data" << std::endl;
 
@@ -527,12 +424,11 @@ namespace blocksci {
 
         // Create a vector of addresses ordered by their index in `collectedAddresses`
         std::vector<Address> addresses(collectedAddresses.size());
-            for (const auto &pair : collectedAddresses) {
-                const Address &address = pair.first;
-                uint32_t index = pair.second;
-                addresses[index] = address;
-            }
-
+        for (const auto &pair : collectedAddresses) {
+            const Address &address = pair.first;
+            uint32_t index = pair.second;
+            addresses[index] = address;
+        }
 
         // Prepare clusterIDs array
         std::vector<uint32_t> clusterIDs(totalAddressCount, UINT32_MAX);
@@ -557,8 +453,4 @@ namespace blocksci {
         return {filesystem::path{outputPath}.str(), chain.getAccess()};
     }
 
-
-
-} // namespace blocksci
-
-
+}  // namespace blocksci
