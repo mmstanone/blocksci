@@ -251,15 +251,19 @@ set(HEURISTICS_SOURCES
 
 set_source_files_properties(${BLOCKSCI_SOURCE_PREFIX}/scripts/bitcoin_bech32.cpp PROPERTIES COMPILE_FLAGS -Wno-everything)
 set_source_files_properties(${BLOCKSCI_SOURCE_PREFIX}/cluster/cluster_manager.cpp PROPERTIES COMPILE_FLAGS "-Wno-reserved-id-macro -Wno-shorten-64-to-32")
+set_source_files_properties(${BLOCKSCI_SOURCE_PREFIX}/cluster/coinjoin_cluster_manager.cpp PROPERTIES COMPILE_FLAGS "-Wno-reserved-id-macro -Wno-shorten-64-to-32")
+
 
 set(CLUSTER_HEADERS
   ${BLOCKSCI_HEADER_PREFIX}/cluster/cluster_fwd.hpp
   ${BLOCKSCI_HEADER_PREFIX}/cluster/cluster_manager.hpp
+  ${BLOCKSCI_HEADER_PREFIX}/cluster/coinjoin_cluster_manager.hpp
   ${BLOCKSCI_HEADER_PREFIX}/cluster/cluster.hpp
 )
 
 set(CLUSTER_SOURCES
   ${BLOCKSCI_SOURCE_PREFIX}/cluster/cluster_manager.cpp
+  ${BLOCKSCI_SOURCE_PREFIX}/cluster/coinjoin_cluster_manager.cpp
   ${BLOCKSCI_SOURCE_PREFIX}/cluster/cluster.cpp
 )
 

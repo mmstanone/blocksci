@@ -40,14 +40,15 @@ namespace blocksci {
         
         static ClusterManager createClustering(BlockRange &chain, const heuristics::ChangeHeuristic &heuristic, const std::string &outputPath, bool overwrite = false, bool ignoreCoinJoin = true);
         static ClusterManager createClustering(BlockRange &chain, const std::function<ranges::any_view<Output>(const Transaction &tx)> &changeHeuristic, const std::string &outputPath, bool overwrite, bool ignoreCoinJoin);
-    
-        static ClusterManager createCoinJoinClustering(BlockRange &chain, const std::string &outputPath, bool overwrite = false, std::string coinjoinType = "None");
         
         Cluster getCluster(const Address &address) const;
         
         ranges::any_view<Cluster, ranges::category::random_access | ranges::category::sized> getClusters() const;
         
         ranges::any_view<TaggedCluster> taggedClusters(const std::unordered_map<Address, std::string> &tags) const;
+        static void prepareClusterDataLocation(const std::string &outputPath, bool overwrite);
+        static uint32_t remapClusterIds(std::vector<uint32_t> &parents);
+
     };
     
     using cluster_range = decltype(std::declval<ClusterManager>().getClusters());

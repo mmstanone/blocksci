@@ -14,6 +14,7 @@
 #include "self_apply_py.hpp"
 
 #include <blocksci/cluster/cluster_manager.hpp>
+#include <blocksci/cluster/coinjoin_cluster_manager.hpp>
 #include <blocksci/heuristics/change_address.hpp>
 
 #include <blocksci/chain/blockchain.hpp>
@@ -74,13 +75,30 @@ void init_cluster_manager(pybind11::module &s) {
     .def("tagged_clusters", [](ClusterManager &cm, const std::unordered_map<blocksci::Address, std::string> &tags) -> Iterator<TaggedCluster> {
         return cm.taggedClusters(tags);
     }, py::arg("tagged_addresses"), "Given a dictionary of tags, return a list of TaggedCluster objects for any clusters containing tagged scripts")
-    .def_static("create_coinjoin_clustering", [](Blockchain &chain, BlockHeight start, BlockHeight stop, const std::string &outputPath, bool overwrite, std::string coinjoinType) {
+    ;
+}
+
+void init_coinjoin_cluster_manager(pybind11::module &s) {
+    py::class_<CoinjoinClusterManager>(s, "CoinjoinClusterManager", "Class managing the cluster dat for coinjoins")
+    .def(py::init([](std::string arg, blocksci::Blockchain &chain) {
+       return CoinjoinClusterManager(arg, chain.getAccess());
+    }))
+    .def("cluster_with_address", [](const CoinjoinClusterManager &cm, const Address &address) -> Cluster {
+       return cm.getCluster(address);
+    }, py::arg("address"), "Return the cluster containing the given address")
+    .def("clusters", [](CoinjoinClusterManager &cm) -> Range<Cluster> {
+        return {cm.getClusters()};
+    }, "Get a list of all clusters (The list is lazy so there is no cost to calling this method)")
+    .def("tagged_clusters", [](CoinjoinClusterManager &cm, const std::unordered_map<blocksci::Address, std::string> &tags) -> Iterator<TaggedCluster> {
+        return cm.taggedClusters(tags);
+    }, py::arg("tagged_addresses"), "Given a dictionary of tags, return a list of TaggedCluster objects for any clusters containing tagged scripts")
+    .def_static("create_clustering", [](Blockchain &chain, BlockHeight start, BlockHeight stop, const std::string &outputPath, bool overwrite, std::string coinjoinType) {
         py::scoped_ostream_redirect stream(std::cout, py::module::import("sys").attr("stdout"));
         if (stop == -1) {
             stop = chain.size();
         }
         auto range = chain[{start, stop}];
-        return ClusterManager::createCoinJoinClustering(range, outputPath, overwrite, coinjoinType);
+        return CoinjoinClusterManager::createClustering(range, outputPath, overwrite, coinjoinType);
     }, py::arg("chain"), py::arg("start"), py::arg("stop"), py::arg("output_path"), py::arg("overwrite") = false, py::arg("coinjoin_type") = "None")
     ;
 }
