@@ -6,6 +6,8 @@
 #include <blocksci/chain/transaction.hpp>
 #include <blocksci/cluster/cluster.hpp>
 #include <blocksci/cluster/coinjoin_cluster_manager.hpp>
+#include <functional>
+#include <iostream>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -16,6 +18,7 @@ namespace blocksci {
         struct BLOCKSCI_EXPORT ClusteringHeuristicsType {
             enum Enum {
                 OneOutputConsolidation,
+                OneInputConsolidation,
                 None,
             };
         };
@@ -23,7 +26,7 @@ namespace blocksci {
         template <ClusteringHeuristicsType::Enum heuristic>
         struct BLOCKSCI_EXPORT ClusteringHeuristicImpl {
             void operator()(const Transaction& tx, const std::unordered_set<Transaction>& coinjoinTransactions,
-                            AddressDisjointSets& ds, std::unordered_map<Address, uint32_t>& collectedAddresses) const;
+                            AddressDisjointSets& ds, const std::unordered_map<Address, uint32_t>& collectedAddresses) const;
         };
 
         struct BLOCKSCI_EXPORT ClusteringHeuristic {
@@ -39,9 +42,23 @@ namespace blocksci {
                             AddressDisjointSets& ds, std::unordered_map<Address, uint32_t>& collectedAddresses) const {
                 impl(tx, coinjoinTransactions, ds, collectedAddresses);
             }
+
+            ClusteringHeuristic operator&(ClusteringHeuristic other) const {
+                auto first_impl = impl;
+                auto second_impl = other.impl;
+
+                return ClusteringHeuristic(
+                    [first_impl, second_impl](
+                        const Transaction& tx, const std::unordered_set<Transaction>& coinjoinTransactions,
+                        AddressDisjointSets& ds, std::unordered_map<Address, uint32_t>& collectedAddresses) {
+                        first_impl(tx, coinjoinTransactions, ds, collectedAddresses);
+                        second_impl(tx, coinjoinTransactions, ds, collectedAddresses);
+                    });
+            }
         };
 
         using OneOutputConsolidation = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidation>;
+        using OneInputConsolidation = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneInputConsolidation>;
         using NoClustering = ClusteringHeuristicImpl<ClusteringHeuristicsType::None>;
 
         ClusteringHeuristic BLOCKSCI_EXPORT getClusteringHeuristic(const std::string& heuristicName);

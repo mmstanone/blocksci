@@ -4,14 +4,15 @@
 #define coinjoin_cluster_manager_hpp
 
 #include <blocksci/blocksci_export.h>
-#include "../external/dset/dset.h"
 
 #include <functional>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
 
+#include "../external/dset/dset.h"
 #include "cluster.hpp"
 #include "cluster_fwd.hpp"
 

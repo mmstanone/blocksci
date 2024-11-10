@@ -202,24 +202,19 @@ namespace blocksci {
         BlockRange &chain, std::unordered_map<Address, uint32_t> collectedAddresses,
         std::unordered_set<Transaction> coinjoinTransactions,
         const blocksci::coinjoin_heuristics::ClusteringHeuristic &heuristic) {
+
+        std::cout << "Creating disjoint sets of size " << collectedAddresses.size() << std::endl;
         blocksci::AddressDisjointSets ds(collectedAddresses.size(), collectedAddresses);
 
         std::cout << "Created disjoint sets of size " << ds.size() << std::endl;
 
-        // Map function to perform unions directly
         auto mapFunc = [&](const BlockRange &blocks) {
-            // For each block in the assigned block range
             for (const auto &block : blocks) {
-                // For each transaction in the block
                 for (const auto &tx : block) {
-                    // Skip coinbase transactions
                     if (tx.isCoinbase()) continue;
-
-                    // skip non-coinjoin transactions
                     if (!coinjoinTransactions.count(tx)) {
                         continue;
                     }
-
                     heuristic(tx, coinjoinTransactions, ds, collectedAddresses);
                 }
             }

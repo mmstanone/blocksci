@@ -1,11 +1,12 @@
 #include <blocksci/cluster/coinjoin_clustering_heuristics.hpp>
+#include <unordered_set>
 
 namespace blocksci {
     namespace coinjoin_heuristics {
-        static void one_output_consolidation(const Transaction& tx,
-                                             const std::unordered_set<Transaction>& coinjoinTransactions,
-                                             AddressDisjointSets& ds,
-                                             std::unordered_map<Address, uint32_t>& collectedAddresses) {
+        static void one_input_consolidation(const Transaction& tx,
+                                            const std::unordered_set<Transaction>& coinjoinTransactions,
+                                            AddressDisjointSets& ds,
+                                            const std::unordered_map<Address, uint32_t>& collectedAddresses) {
             // <-- go this way
             for (const auto& input : tx.inputs()) {
                 auto input_tx = input.getSpentTx();
@@ -33,7 +34,12 @@ namespace blocksci {
                     ds.link_addresses(inputAddress, next_level_inputAddress);
                 }
             }
+        }
 
+        static void one_output_consolidation(const Transaction& tx,
+                                             const std::unordered_set<Transaction>& coinjoinTransactions,
+                                             AddressDisjointSets& ds,
+                                             const std::unordered_map<Address, uint32_t>& collectedAddresses) {
             // --> go this way
             for (const auto& output : tx.outputs()) {
                 if (!output.isSpent()) continue;
@@ -68,21 +74,33 @@ namespace blocksci {
         template <>
         void ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidation>::operator()(
             const Transaction& tx, const std::unordered_set<Transaction>& coinjoinTransactions, AddressDisjointSets& ds,
-            std::unordered_map<Address, uint32_t>& collectedAddresses) const {
+            const std::unordered_map<Address, uint32_t>& collectedAddresses) const {
             one_output_consolidation(tx, coinjoinTransactions, ds, collectedAddresses);
+        }
+
+        template <>
+        void ClusteringHeuristicImpl<ClusteringHeuristicsType::OneInputConsolidation>::operator()(
+            const Transaction& tx, const std::unordered_set<Transaction>& coinjoinTransactions, AddressDisjointSets& ds,
+            const std::unordered_map<Address, uint32_t>& collectedAddresses) const {
+            one_input_consolidation(tx, coinjoinTransactions, ds, collectedAddresses);
         }
 
         template <>
         void ClusteringHeuristicImpl<ClusteringHeuristicsType::None>::operator()(
             const Transaction&, const std::unordered_set<Transaction>&, AddressDisjointSets&,
-            std::unordered_map<Address, uint32_t>&) const {
+            const std::unordered_map<Address, uint32_t>&) const {
             // Do nothing
         }
 
         ClusteringHeuristic getClusteringHeuristic(const std::string& heuristicName) {
             if (heuristicName == "OneOutputConsolidation") {
+                std::cout << "Using heuristic: OneOutputConsolidation" << std::endl;
                 return ClusteringHeuristic(OneOutputConsolidation{});
+            } else if (heuristicName == "OneInputConsolidation") {
+                std::cout << "Using heuristic: OneInputConsolidation" << std::endl;
+                return ClusteringHeuristic(OneInputConsolidation{});
             } else if (heuristicName == "None") {
+                std::cout << "Using heuristic: None" << std::endl;
                 return ClusteringHeuristic(NoClustering{});
             } else {
                 throw std::invalid_argument("Invalid heuristic name");
