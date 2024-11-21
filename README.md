@@ -28,7 +28,7 @@ An example way to set up the mounts is as follows:
 To run the container with the mounted volumes, you can use the following command:
 
 ```bash
-docker run --name blocksci_container --replace -p <notebook port>:8888 -v <this repository folder>:/mnt/blocksci-compilable -v <bitcoin fullnode directory>:/mnt/data  -v <analysis volume>:/mnt/anal -it --entrypoint /bin/bash blocksci-cj:latest
+docker run --name blocksci_container --replace -p <notebook port>:8888 -v <this repository folder>:/mnt/blocksci -v <bitcoin fullnode directory>:/mnt/data  -v <analysis volume>:/mnt/anal -it --entrypoint /bin/bash blocksci-cj:latest
 ```
 
 The `--replace` flag is used to remove the container with the same name if it already exists. The `-p` flag is used to expose the Jupyter notebook on the specified port. The `-v` flag is used to mount the volumes. The `-it` flag is used to run the container in interactive mode. The `--entrypoint /bin/bash` flag is used to run the container in bash mode, so you can run the Jupyter notebook manually.

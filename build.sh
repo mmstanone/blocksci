@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd /mnt/blocksci-compilable
+cd /mnt/blocksci
 
 (mkdir -p build && \
     cd build && \
@@ -8,7 +8,7 @@ cd /mnt/blocksci-compilable
     make -j258 && \
     make install) || exit 1
 
-cd /mnt/blocksci-compilable
+cd /mnt/blocksci
 
 pip3 install jupyter notebook
 pip3 install jupyter_contrib_nbextensions
