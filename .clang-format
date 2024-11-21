@@ -1,0 +1,10 @@
+BasedOnStyle: Google
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+BreakBeforeBraces: Attach
+SpaceBeforeParens: ControlStatements
+PointerAlignment: Left
+AllowShortFunctionsOnASingleLine: Inline
+ColumnLimit: 120
+NamespaceIndentation: All

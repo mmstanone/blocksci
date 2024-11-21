@@ -37,6 +37,9 @@
 #include <unordered_map>
 #include <utility>
 #include <thread>
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
 
 namespace {
     template <typename Job>
@@ -136,7 +139,8 @@ namespace blocksci {
             return disjoinSets.find(index);
         }
     };
-    
+
+
     template <typename ChangeFunc>
     std::vector<std::pair<Address, Address>> processTransaction(const Transaction &tx, ChangeFunc && changeHeuristic,
                                                                 bool ignoreCoinJoin) {
@@ -210,7 +214,7 @@ namespace blocksci {
         return parents;
     }
     
-    uint32_t remapClusterIds(std::vector<uint32_t> &parents) {
+    uint32_t ClusterManager::remapClusterIds(std::vector<uint32_t> &parents) {
         uint32_t placeholder = std::numeric_limits<uint32_t>::max();
         std::vector<uint32_t> newClusterIds(parents.size(), placeholder);
         uint32_t clusterCount = 0;
@@ -225,9 +229,10 @@ namespace blocksci {
         
         return clusterCount;
     }
-    
-    void recordOrderedAddresses(const std::vector<uint32_t> &parent, std::vector<uint32_t> &clusterPositions, const std::unordered_map<DedupAddressType::Enum, uint32_t> &scriptStarts, std::ofstream &clusterAddressesFile) {
+
+
         
+    void recordOrderedAddresses(const std::vector<uint32_t> &parent, std::vector<uint32_t> &clusterPositions, const std::unordered_map<DedupAddressType::Enum, uint32_t> &scriptStarts, std::ofstream &clusterAddressesFile) {
         std::map<uint32_t, DedupAddressType::Enum> typeIndexes;
         for (auto &pair : scriptStarts) {
             auto it = typeIndexes.find(pair.second);
@@ -255,7 +260,7 @@ namespace blocksci {
         clusterAddressesFile.write(reinterpret_cast<char *>(orderedScripts.data()), static_cast<long>(sizeof(DedupAddress) * orderedScripts.size()));
     }
     
-    void prepareClusterDataLocation(const std::string &outputPath, bool overwrite) {
+    void ClusterManager::prepareClusterDataLocation(const std::string &outputPath, bool overwrite) {
         auto outputLocation = filesystem::path{outputPath};
         
         std::string offsetFile = ClusterAccess::offsetFilePath(outputPath);
@@ -341,7 +346,7 @@ namespace blocksci {
     
     template <typename ChangeFunc>
     ClusterManager createClusteringImpl(BlockRange &chain, ChangeFunc && changeHeuristic, const std::string &outputPath, bool overwrite, bool ignoreCoinJoin) {
-        prepareClusterDataLocation(outputPath, overwrite);
+        ClusterManager::prepareClusterDataLocation(outputPath, overwrite);
         
         // Perform clustering
         
@@ -361,7 +366,7 @@ namespace blocksci {
         }
         
         auto parent = createClusters(chain, scriptStarts, static_cast<uint32_t>(totalScriptCount), std::forward<ChangeFunc>(changeHeuristic), ignoreCoinJoin);
-        uint32_t clusterCount = remapClusterIds(parent);
+        uint32_t clusterCount = ClusterManager::remapClusterIds(parent);
         serializeClusterData(scripts, outputPath, parent, scriptStarts, clusterCount);
         return {filesystem::path{outputPath}.str(), chain.getAccess()};
     }
@@ -378,139 +383,6 @@ namespace blocksci {
     ClusterManager ClusterManager::createClustering(BlockRange &chain, const std::function<ranges::any_view<Output>(const Transaction &tx)> &changeHeuristic, const std::string &outputPath, bool overwrite, bool ignoreCoinJoin) {
         return createClusteringImpl(chain, changeHeuristic, outputPath, overwrite, ignoreCoinJoin);
     }
-
-    std::unordered_set<std::string> identifyCoinjoinTransactions(BlockRange &chain, const std::string &coinjoinType) {
-        // Map function
-        auto mapFunc = [&](const BlockRange &blocks, int threadNum) {
-            std::unordered_set<std::string> localCoinjoinTransactions;
-            for (const auto &block : blocks) {
-                for (const auto &tx : block) {
-                    if (heuristics::isCoinjoinOfGivenType(tx, coinjoinType)) {
-                        localCoinjoinTransactions.insert(tx.getHash().GetHex());
-                    }
-                }
-            }
-            return localCoinjoinTransactions;
-        };
-
-        // Reduce function
-        auto reduceFunc = [](std::unordered_set<std::string> &set1,
-                            std::unordered_set<std::string> &set2) -> std::unordered_set<std::string> & {
-            set1.insert(set2.begin(), set2.end());
-            return set1;
-        };
-
-        // Perform mapReduce
-        return chain.mapReduce<std::unordered_set<std::string>>(mapFunc, reduceFunc);
-    }
-
-
-    std::pair<std::vector<uint32_t>, uint32_t> createClustersForCoinJoin2(
-        BlockRange &chain,
-        std::unordered_map<DedupAddressType::Enum, uint32_t> addressStarts,
-        uint32_t totalScriptCount,
-        const std::string &coinjoinType
-    ) {
-        AddressDisjointSets ds(totalScriptCount, std::move(addressStarts));
-
-        // Identify coinjoins using mapReduce
-        auto coinjoinTransactions = identifyCoinjoinTransactions(chain, coinjoinType);
-
-        // Map function to perform unions directly
-        auto mapFunc = [&](const BlockRange &blocks, int threadNum) {
-            // For each block in the assigned block range
-            for (const auto &block : blocks) {
-                // For each transaction in the block
-                for (const auto &tx : block) {
-                    // Skip coinbase transactions
-                    if (tx.isCoinbase()) continue;
-
-                    // skip non-coinjoin transactions
-                    if (!coinjoinTransactions.count(tx.getHash().GetHex())) {
-                        continue;
-                    }
-
-                    // <-- go this way
-                    for (const auto &input: tx.inputs()) {
-                        auto input_tx = input.getSpentTx();
-                        if (coinjoinTransactions.count(input_tx.getHash().GetHex())) {
-                            continue;
-                        }
-                        if (input_tx.outputCount() != 1) {
-                            continue;
-                        }
-
-                        auto inputAddress = input_tx.outputs()[0].getAddress();
-                        for (const auto &next_level_input: input_tx.inputs()) {
-                            auto next_level_input_tx = next_level_input.getSpentTx();
-
-                            auto next_level_inputAddress = next_level_input.getAddress();
-                            ds.link_addresses(inputAddress, next_level_inputAddress);
-                        }
-                    }
-
-
-                    // --> go this way
-                    for (const auto &output : tx.outputs()) {
-                        if (!output.isSpent()) continue;
-
-                        auto nextTx = output.getSpendingTx().value();
-                        auto nextTxNum = nextTx.txNum;
-
-                        if (nextTx.outputCount() != 1) {
-                            continue;
-                        }
-
-                        for (const auto &nextLevelInput: nextTx.inputs()) {
-                            auto nextLevelInputAddress = nextLevelInput.getAddress();
-                            ds.link_addresses(nextTx.outputs()[0].getAddress(), nextLevelInputAddress);
-                        }
-                    }
-                }
-            }
-            return 0; // Return type as required by mapReduce
-        };
-
-        // Reduce function (no-op in this case)
-        auto reduceFunc = [](int &, int &) -> int & { static int dummy = 0; return dummy; };
-
-        chain.mapReduce<int>(mapFunc, reduceFunc);
-
-        ds.resolveAll();
-
-        std::vector<uint32_t> parents(ds.size());
-        for (uint32_t i = 0; i < ds.size(); ++i) {
-            parents[i] = ds.find(i);
-        }
-
-        uint32_t clusterCount = remapClusterIds(parents);
-
-        return std::make_pair(parents, clusterCount);
-    }
-
-
-    ClusterManager ClusterManager::createCoinJoinClustering(BlockRange &chain, const std::string &outputPath, bool overwrite, std::string coinjoinType) {
-        prepareClusterDataLocation(outputPath, overwrite);
-
-        auto &scripts = chain.getAccess().getScripts();
-        size_t totalScriptCount = scripts.totalAddressCount();
-
-        std::unordered_map<DedupAddressType::Enum, uint32_t> scriptStarts;
-        {
-            uint32_t start = 0;
-            for (auto dedupType : DedupAddressType::allArray()) {
-                scriptStarts[dedupType] = start;
-                start += scripts.scriptCount(dedupType);
-            }
-        }
-
-        // Use createClustersForCoinJoin with mapReduce
-        auto [parents, clusterCount] = createClustersForCoinJoin2(chain, scriptStarts, static_cast<uint32_t>(totalScriptCount), coinjoinType);
-
-        serializeClusterData(scripts, outputPath, parents, scriptStarts, clusterCount);
-        return {filesystem::path{outputPath}.str(), chain.getAccess()};
-    }
-
 
 } // namespace blocksci
 

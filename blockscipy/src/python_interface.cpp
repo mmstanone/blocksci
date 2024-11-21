@@ -253,6 +253,7 @@ PYBIND11_MODULE(_blocksci, m) {
     }
     {
         init_cluster_manager(clusterMod);
+        init_coinjoin_cluster_manager(clusterMod);
         {
             init_cluster(clusterCl);
             addClusterRangeMethods(clusterRangeCls);

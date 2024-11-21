@@ -41,6 +41,9 @@ target_compile_options(_blocksci PRIVATE -Wall -Wextra -Wpedantic)
 target_include_directories(_blocksci PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../blocksci)
 target_include_directories(_blocksci PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 target_include_directories(_blocksci PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../blocksci/src)
+target_include_directories(_blocksci PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../blocksci/external)
+target_include_directories(_blocksci PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../blocksci/external/dset)
+
 
 
 target_link_libraries(

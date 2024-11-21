@@ -17,6 +17,8 @@
 namespace blocksci {
     class DataAccess;
     namespace heuristics {
+    enum class BLOCKSCI_EXPORT CoinJoinType { WW2zkSNACKs, WW2PostzkSNACKs, WW1, Whirlpool, None };
+
     
     enum class BLOCKSCI_EXPORT CoinJoinResult {
         True, False, Timeout
