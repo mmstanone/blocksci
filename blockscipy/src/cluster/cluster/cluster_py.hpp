@@ -17,6 +17,7 @@
 
 void init_cluster(pybind11::class_<blocksci::Cluster> &cl);
 void init_cluster_manager(pybind11::module &s);
+void init_coinjoin_cluster_manager(pybind11::module &s);
 void addClusterRangeMethods(RangeClasses<blocksci::Cluster> &classes);
 
 #endif /* cluster_py_hpp */

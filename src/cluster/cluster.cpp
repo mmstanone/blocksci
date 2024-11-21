@@ -25,6 +25,8 @@
 #include <range/v3/iterator/operations.hpp>
 #include <range/v3/view/join.hpp>
 
+#include <iostream>
+
 namespace {
     using namespace blocksci;
     
@@ -181,6 +183,7 @@ namespace blocksci {
     }
     
     uint32_t Cluster::countOfType(AddressType::Enum type) const {
+        std::cout << "Cluster number: " << clusterNum << std::endl;
         auto dedupSearchType = dedupType(type);
         uint32_t count = 0;
         for (auto &address : getDedupAddresses()) {

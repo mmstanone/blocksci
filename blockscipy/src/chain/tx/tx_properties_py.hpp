@@ -18,6 +18,10 @@
 #include <pybind11/chrono.h>
 #include <pybind11/operators.h>
 
+#include "proxy.hpp"
+#include "proxy_create.hpp"
+#include "proxy_utils.hpp"
+
 struct AddTransactionMethods {
     template <typename FuncApplication>
     void operator()(FuncApplication func) {
@@ -95,6 +99,18 @@ struct AddTransactionMethods {
         func(property_tag, "mempool_space_link", +[](const Transaction &tx) -> std::string {
             return "https://mempool.space/tx/" + tx.getHash().GetHex();
         }, "A link to the mempool.space page for this transaction");
+        func(property_tag, "coinjoin_tag", +[](const Transaction &tx) -> int64_t {
+            if (blocksci::heuristics::isWasabi2CoinJoin(tx)) {
+                // 850237 is July 1st 2024
+                return tx.block().height() < 850237 ? static_cast<int64_t>(blocksci::heuristics::CoinJoinType::WW2zkSNACKs) : static_cast<int64_t>(blocksci::heuristics::CoinJoinType::WW2PostzkSNACKs);
+            } else if (blocksci::heuristics::isWhirlpoolCoinJoin(tx)) {
+                return static_cast<int64_t>(blocksci::heuristics::CoinJoinType::Whirlpool);
+            } else if (blocksci::heuristics::isWasabi1CoinJoin(tx)) {
+                return static_cast<int64_t>(blocksci::heuristics::CoinJoinType::WW1);
+            }  else {
+                return static_cast<int64_t>(blocksci::heuristics::CoinJoinType::None);
+            }
+        }, "The type of coinjoin this transaction is, if any");
     }
 };
 

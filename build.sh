@@ -2,11 +2,11 @@
 
 cd /mnt/blocksci-compilable
 
-mkdir -p build && \
+(mkdir -p build && \
     cd build && \
     CC=gcc-7 CXX=g++-7 cmake -DCMAKE_BUILD_TYPE=Release .. && \
     make -j258 && \
-    make install
+    make install) || exit 1
 
 cd /mnt/blocksci-compilable
 
@@ -15,11 +15,11 @@ pip3 install jupyter_contrib_nbextensions
 jupyter contrib nbextension install --user
 
 
-CC=gcc-7 CXX=g++-7 pip3 install -e blockscipy
+CC=gcc-7 CXX=g++-7 pip3 install -e blockscipy || exit 1
 
 source .venv/bin/activate
 
 cd Notebooks
 
-jupyter notebook --ip=0.0.0.0 --allow-root
+jupyter notebook --ip=0.0.0.0 --allow-root || exit 1
 
