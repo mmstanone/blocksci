@@ -125,19 +125,6 @@ namespace blocksci {
                flatMapOptionals();
     }
 
-    // void linkScripthashNested(DataAccess &access, AddressDisjointSets &ds) {
-    //     auto scriptHashCount = access.getScripts().scriptCount(DedupAddressType::SCRIPTHASH);
-
-    //     segmentWork(1, scriptHashCount + 1, 8, [&ds, &access](uint32_t index) {
-    //         Address pointer(index, AddressType::SCRIPTHASH, access);
-    //         script::ScriptHash scripthash{index, access};
-    //         auto wrappedAddress = scripthash.getWrappedAddress();
-    //         if (wrappedAddress) {
-    //             ds.link_addresses(pointer, *wrappedAddress);
-    //         }
-    //     });
-    // }
-
     uint32_t remapClusterIdsForCoinJoins(std::vector<uint32_t> &clusterIDs) {
         uint32_t placeholder = UINT32_MAX;
         std::unordered_map<uint32_t, uint32_t> clusterIDMap;
@@ -158,7 +145,6 @@ namespace blocksci {
     }
 
     std::unordered_set<Transaction> identifyCoinjoinTransactions(BlockRange &chain, const std::string &coinjoinType) {
-        // Map function
         auto mapFunc = [&](const BlockRange &blocks) {
             std::unordered_set<Transaction> localCoinjoinTransactions;
             for (const auto &block : blocks) {
@@ -171,43 +157,36 @@ namespace blocksci {
             return localCoinjoinTransactions;
         };
 
-        // Reduce function
         auto reduceFunc = [](std::unordered_set<Transaction> &set1,
                              std::unordered_set<Transaction> &set2) -> std::unordered_set<Transaction> & {
             set1.insert(set2.begin(), set2.end());
             return set1;
         };
 
-        // Perform mapReduce
         return chain.mapReduce<std::unordered_set<Transaction>>(mapFunc, reduceFunc);
     }
 
-    template <typename LinkingFunc>
-    std::vector<std::pair<Address, Address>> processTransaction(const Transaction &tx, LinkingFunc &&linkingFunc) {
-        std::vector<std::pair<Address, Address>> pairsToUnion;
-
-        if (!tx.isCoinbase()) {
-            auto inputs = tx.inputs();
-            auto firstAddress = inputs[0].getAddress();
-            for (uint16_t i = 1; i < inputs.size(); i++) {
-                pairsToUnion.emplace_back(firstAddress, inputs[i].getAddress());
-            }
-
-            RANGES_FOR(auto change, linkingFunc(tx)) { pairsToUnion.emplace_back(change.getAddress(), firstAddress); }
-        }
-        return pairsToUnion;
-    }
-
+    /**
+     * Create clusters from a set of transactions and a heuristic.
+     * Skips CoinJoin and Coinbase transactions.
+     * 
+     * @param chain The blocks to process
+     * @param collectedAddresses A map of addresses to their index in the disjoint set
+     * @param coinjoinTransactions A set of transactions that are coinjoins
+     * @param heuristic The heuristic to use to cluster the transactions
+     * 
+     * @return A pair of the cluster IDs and the number of clusters
+     */
     std::pair<std::vector<uint32_t>, uint32_t> createClusters(
         BlockRange &chain, std::unordered_map<Address, uint32_t> collectedAddresses,
         std::unordered_set<Transaction> coinjoinTransactions,
         const blocksci::coinjoin_heuristics::ClusteringHeuristic &heuristic) {
-
         std::cout << "Creating disjoint sets of size " << collectedAddresses.size() << std::endl;
         blocksci::AddressDisjointSets ds(collectedAddresses.size(), collectedAddresses);
 
         std::cout << "Created disjoint sets of size " << ds.size() << std::endl;
 
+        // push the heuristics into the map function and link addresses in them
         auto mapFunc = [&](const BlockRange &blocks) {
             for (const auto &block : blocks) {
                 for (const auto &tx : block) {
@@ -237,6 +216,10 @@ namespace blocksci {
         return std::make_pair(parents, clusterCount);
     }
 
+    /**
+     * Collect addresses within `maxHops` from a set of transactions `startTransactions`.
+     * This is used to collect addresses around CoinJoin transactions gathered in a different step.
+     */
     std::unordered_map<Address, uint32_t> collectAddressesWithinHops(
         const std::unordered_set<Transaction> &startTransactions, int maxHops) {
         std::unordered_map<Address, uint32_t> collectedAddresses;
@@ -316,7 +299,7 @@ namespace blocksci {
 
             uint32_t &position = currentPositions[clusterID];
             // Reconstruct DedupAddress from global index
-            DedupAddressType::Enum addressType = DedupAddressType::MULTISIG;
+            DedupAddressType::Enum addressType = DedupAddressType::NULL_DATA;
             uint32_t scriptNum = 0;
 
             // Determine addressType and scriptNum based on global index 'i'
@@ -345,32 +328,26 @@ namespace blocksci {
                                       const std::vector<uint32_t> &clusterIDs,
                                       const std::unordered_map<DedupAddressType::Enum, uint32_t> &scriptStarts,
                                       uint32_t clusterCount) {
-        // Prepare clusterPositions
         std::vector<uint32_t> clusterPositions(clusterCount + 1, 0);
-
-        // Open clusterAddressesFile
         std::string addressesFile = ClusterAccess::addressesFilePath(outputPath);
         std::ofstream clusterAddressesFile(addressesFile, std::ios::binary);
 
-        // Call modified recordOrderedAddressesForCoinJoins asynchronously
+        // This both with cluster index file writing can be done asynchronously
         auto recordOrdered =
             std::async(std::launch::async, recordOrderedAddresses, clusterIDs, std::ref(clusterPositions),
                        std::ref(scriptStarts), std::ref(scripts), std::ref(clusterAddressesFile));
 
-        // Write cluster offsets
         std::string offsetFile = ClusterAccess::offsetFilePath(outputPath);
         std::ofstream clusterOffsetFile(offsetFile, std::ios::binary);
 
-        // Wait for recordOrdered to finish
         recordOrdered.get();
 
         clusterOffsetFile.write(reinterpret_cast<char *>(clusterPositions.data()),
                                 sizeof(uint32_t) * clusterPositions.size());
 
-        // Write cluster index files asynchronously
-        std::vector<std::future<void>> futures;
+        std::vector<std::future<void>> indexFileTasks;
         for (auto dedupType : DedupAddressType::allArray()) {
-            futures.push_back(std::async(std::launch::async, [&, dedupType]() {
+            indexFileTasks.push_back(std::async(std::launch::async, [&, dedupType]() {
                 uint32_t startIndex = scriptStarts.at(dedupType);
                 uint32_t totalCount = scripts.scriptCount(dedupType);
                 std::string indexFilePath = ClusterAccess::typeIndexFilePath(outputPath, dedupType);
@@ -381,12 +358,50 @@ namespace blocksci {
             }));
         }
 
-        // Wait for all futures to complete
-        for (auto &fut : futures) {
-            fut.get();
+        for (auto &task : indexFileTasks) {
+            task.get();
         }
     }
 
+    std::vector<uint32_t> collectClusterIDs(std::unordered_map<Address, uint32_t> collectedAddresses, uint32_t totalAddressCount,
+                                            const std::vector<uint32_t> &parents, std::unordered_map<DedupAddressType::Enum, uint32_t> scriptStarts) {
+        // Create a vector of addresses ordered by their index in `collectedAddresses`
+        std::vector<Address> addresses(collectedAddresses.size());
+        for (const auto &pair : collectedAddresses) {
+            const Address &address = pair.first;
+            uint32_t index = pair.second;
+            addresses[index] = address;
+        }
+
+        // Prepare clusterIDs array
+        std::vector<uint32_t> clusterIDs(totalAddressCount, UINT32_MAX);
+
+        // Assign cluster IDs to global indices
+        for (size_t i = 0; i < addresses.size(); ++i) {
+            const Address &address = addresses[i];
+            DedupAddressType::Enum addressType = dedupType(address.type);
+            uint32_t scriptNum = address.scriptNum;
+            uint32_t globalIndex = scriptStarts[addressType] + (scriptNum - 1);
+            clusterIDs[globalIndex] = parents[i];
+        }
+
+        return clusterIDs;
+    }
+
+    /**
+     * Create a clustering around CoinJoin transactions of given type.
+     *
+     * First, find the CoinJoin transactions and collect addresses within 2 hops of them.
+     * Then, create clusters using the provided clustering heuristic function.
+     * Finally, serialize the cluster data to the output directory.
+     *
+     * @param chain BlockRange to cluster
+     * @param clusteringFunc Clustering heuristic function
+     * @param outputPath Path to output directory
+     * @param overwrite Overwrite existing cluster data
+     * @param coinjoinType Type of CoinJoin transactions to cluster (wasabi1, wasabi2, whirlpool)
+     * @return CoinjoinClusterManager instance
+     */
     CoinjoinClusterManager CoinjoinClusterManager::createClustering(
         BlockRange &chain, const blocksci::coinjoin_heuristics::ClusteringHeuristic &clusteringFunc,
         const std::string &outputPath, bool overwrite, std::string coinjoinType) {
@@ -417,25 +432,7 @@ namespace blocksci {
             }
         }
 
-        // Create a vector of addresses ordered by their index in `collectedAddresses`
-        std::vector<Address> addresses(collectedAddresses.size());
-        for (const auto &pair : collectedAddresses) {
-            const Address &address = pair.first;
-            uint32_t index = pair.second;
-            addresses[index] = address;
-        }
-
-        // Prepare clusterIDs array
-        std::vector<uint32_t> clusterIDs(totalAddressCount, UINT32_MAX);
-
-        // Assign cluster IDs to global indices
-        for (size_t i = 0; i < addresses.size(); ++i) {
-            const Address &address = addresses[i];
-            DedupAddressType::Enum addressType = dedupType(address.type);
-            uint32_t scriptNum = address.scriptNum;
-            uint32_t globalIndex = scriptStarts[addressType] + (scriptNum - 1);
-            clusterIDs[globalIndex] = parents[i];
-        }
+        auto clusterIDs = collectClusterIDs(collectedAddresses, totalAddressCount, parents, scriptStarts);
 
         // Remap cluster IDs to be contiguous
         uint32_t remappedClusterCount = remapClusterIdsForCoinJoins(clusterIDs);

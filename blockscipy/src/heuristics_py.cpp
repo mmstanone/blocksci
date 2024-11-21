@@ -22,6 +22,13 @@ struct Heuristics {};
 struct Change {};
 
 void init_heuristics(py::module &m) {
+    py::enum_<heuristics::CoinJoinType>(m, "CoinJoinType")
+        .value("WW2zkSNACKs", heuristics::CoinJoinType::WW2zkSNACKs)
+        .value("WW2PostzkSNACKs", heuristics::CoinJoinType::WW2PostzkSNACKs)
+        .value("WW1", heuristics::CoinJoinType::WW1)
+        .value("Whirlpool", heuristics::CoinJoinType::Whirlpool)
+        .value("None", heuristics::CoinJoinType::None);
+        
     py::enum_<heuristics::CoinJoinResult>(m, "CoinJoinResult")
         .value("True", heuristics::CoinJoinResult::True)
         .value("False", heuristics::CoinJoinResult::False)
