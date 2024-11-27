@@ -15,6 +15,7 @@
 #include "sequence_py.hpp"
 
 #include "chain/blockchain_py.hpp"
+#include "chain/coinjoin_module_py.hpp"
 #include "chain/input/input_py.hpp"
 #include "chain/output/output_py.hpp"
 #include "chain/tx/tx_py.hpp"
@@ -45,6 +46,7 @@ using namespace blocksci;
 
 void init_blockchain(py::module &m);
 void init_heuristics(py::module &m);
+void init_coinjoin_module(py::module &m);
 
 template <typename Class>
 void addSelfProxy(Class &cl) {
@@ -184,6 +186,7 @@ PYBIND11_MODULE(_blocksci, m) {
     init_heuristics(m);
     init_data_access(m);
     init_blockchain(blockchainCl);
+    init_coinjoin_module(blockchainCl);
     init_uint160(uint160Cl);
     init_uint256(uint256Cl);
     {
