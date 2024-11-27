@@ -47,40 +47,7 @@ namespace heuristics {
     }
 
     bool isCoinjoin(const Transaction &tx) {
-        if (tx.inputCount() < 2 || tx.outputCount() < 3) {
-            return false;
-        }
-
-        // Each participant contributes a spend and a change output
-        uint16_t participantCount = (tx.outputCount() + 1) / 2;
-        if (participantCount > tx.inputCount()) {
-            return false;
-        }
-
-        std::unordered_set<Address> inputAddresses;
-        RANGES_FOR(auto input, tx.inputs()) { inputAddresses.insert(input.getAddress()); }
-
-        if (participantCount > inputAddresses.size()) {
-            return false;
-        }
-
-        std::unordered_map<int64_t, uint16_t> outputValues;
-        RANGES_FOR(auto output, tx.outputs()) { outputValues[output.getValue()]++; }
-
-        using pair_type = decltype(outputValues)::value_type;
-        auto pr = std::max_element(std::begin(outputValues), std::end(outputValues),
-                                    [](const pair_type &p1, const pair_type &p2) { return p1.second < p2.second; });
-        // The most common output value should appear exactly `participantCount` times
-        if (pr->second != participantCount) {
-            return false;
-        }
-
-        // Exclude transactions sending dust outputs (unlikely to be CoinJoin)
-        if (pr->first == 546 || pr->first == 2730) {
-            return false;
-        }
-
-        return true;
+        return isWhirlpoolCoinJoin(tx) || isWasabi2CoinJoin(tx) || isWasabi1CoinJoin(tx);
     }
 
     struct OutputBucket {
@@ -621,49 +588,47 @@ namespace heuristics {
         return HWWalletRemixResult::False;
     }
 
-    bool isWasabi1CoinJoin(const Transaction &tx) {
-        if (tx.getBlockHeight() < blocksci::CoinjoinUtils::FirstWasabiBlock) {
-            return false;
-        }
-        // before FirstWasabiNoCoordAddressBlock WW1 had different base denominations and fixed coordinators
-        if (tx.getBlockHeight() < blocksci::CoinjoinUtils::FirstWasabiNoCoordAddressBlock) {
-            // at least one output has to be a coord output
 
-            // get output values and their count
-            std::unordered_map<int64_t, int> outputValues;
-            bool is_coord_output = false;
-            bool more_than_two_outputs = false;
+    bool _isWasabi1StaticCoordinator(const Transaction &tx) {
+        std::unordered_map<int64_t, int> outputValues;
+        bool is_coord_output = false;
+        bool more_than_two_outputs = false;
 
-            for (auto output : tx.outputs()) {
-                if (!more_than_two_outputs) {
-                    outputValues[output.getValue()]++;
-                    if (outputValues[output.getValue()] > 2) {
-                        more_than_two_outputs = true;
-                    }
-                }
-
-                if (!is_coord_output && output.isSpent()) {
-                    auto address = output.getAddress().toString();
-                    if (address == "bc1qs604c7jv6amk4cxqlnvuxv26hv3e48cds4m0ew" ||
-                        address == "bc1qa24tsgchvuxsaccp8vrnkfd85hrcpafg20kmjw") {
-                        is_coord_output = true;
-                    }
-                }
-
-                if (is_coord_output && more_than_two_outputs) {
-                    return true;
+        for (auto output : tx.outputs()) {
+            outputValues[output.getValue()]++;
+            if (output.getType() != AddressType::Enum::WITNESS_PUBKEYHASH) {
+                return false;
+            }
+            if (!is_coord_output) {
+                auto address = output.getAddress().toString();
+                if (address == "WitnessPubkeyAddress(bc1qs604c7jv6amk4cxqlnvuxv26hv3e48cds4m0ew)" ||
+                    address == "WitnessPubkeyAddress(bc1qa24tsgchvuxsaccp8vrnkfd85hrcpafg20kmjw)") {
+                    is_coord_output = true;
                 }
             }
-
+        }
+        
+        if (!is_coord_output) {
             return false;
         }
 
-        if (blocksci::heuristics::isWasabi2CoinJoin(tx)) {
+        // there are at least 2 different outputs and each appeared at least twice
+        if (outputValues.size() < 2) {
             return false;
         }
-        // after FirstWasabiNoCoordAddressBlock WW1 had fixed base denomination and no coordinators
 
-        // and there are at least 10 equal outputs
+        auto moreThanTwice = 0;
+
+        for (auto &output : outputValues) {
+            if (output.second > 2) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    bool _isWasabi1PostStaticCoordinator(const Transaction &tx) {                                
         std::unordered_map<int64_t, int> outputValues;
         for (auto output : tx.outputs()) {
             // all inputs segwit only
@@ -673,7 +638,10 @@ namespace heuristics {
             outputValues[output.getValue()]++;
         }
 
-        if (outputValues.size() < 2) {
+        auto uniqueOutputValues = std::count_if(std::begin(outputValues), std::end(outputValues),
+                                                [](const std::pair<int64_t, int> &p) { return p.second == 1; });
+
+        if (uniqueOutputValues < 2) {
             return false;
         }
 
@@ -683,7 +651,7 @@ namespace heuristics {
                                     return p1.second < p2.second;
                                 });
 
-        if (mostFrequentEqualOutputCount->second < 11) {
+        if (mostFrequentEqualOutputCount->second < 10) {
             return false;
         }
 
@@ -699,6 +667,22 @@ namespace heuristics {
         }
 
         return true;
+    }
+
+    bool isWasabi1CoinJoin(const Transaction &tx) {
+        if (tx.getBlockHeight() < blocksci::CoinjoinUtils::FirstWasabiBlock) {
+            return false;
+        }
+        // before FirstWasabiNoCoordAddressBlock WW1 had different base denominations and fixed coordinators
+        if (tx.getBlockHeight() < blocksci::CoinjoinUtils::FirstWasabiNoCoordAddressBlock) {
+            return _isWasabi1StaticCoordinator(tx);
+        }
+
+        if (blocksci::heuristics::isWasabi2CoinJoin(tx)) {
+            return false;
+        }
+        // after FirstWasabiNoCoordAddressBlock WW1 had fixed base denomination and no coordinators
+        return _isWasabi1PostStaticCoordinator(tx);
     }
 
     /**
@@ -840,9 +824,10 @@ namespace heuristics {
             return false;
         }
 
-        return std::count_if(tx.inputs().begin(), tx.inputs().end(), [current_pool_size](const Input &input) {
-            return input.getValue() != current_pool_size && input.getValue() > current_pool_size &&
-                    (input.getValue() - current_pool_size) < 110000;
+        //tx.Inputs.Where(x => x.PrevOutput.Value != poolSize).All(x => x.PrevOutput.Value.Almost(poolSize, Money.Coins(0.0011m)));
+        return std::all_of(tx.inputs().begin(), tx.inputs().end(), [current_pool_size](const Input &input) {
+            return input.getValue() == current_pool_size 
+                || std::abs(input.getValue() - current_pool_size) < 110000;
         });
     }
 
@@ -888,6 +873,19 @@ namespace heuristics {
             return isWhirlpoolCoinJoin(tx);
         } else {
             return false;
+        }
+    }
+
+    CoinJoinType getCoinjoinTag(const Transaction &tx) {
+        if (blocksci::heuristics::isWasabi2CoinJoin(tx)) {
+            // 850237 is July 1st 2024
+            return tx.block().height() < 850237 ? blocksci::heuristics::CoinJoinType::WW2zkSNACKs : blocksci::heuristics::CoinJoinType::WW2PostzkSNACKs;
+        } else if (blocksci::heuristics::isWhirlpoolCoinJoin(tx)) {
+            return blocksci::heuristics::CoinJoinType::Whirlpool;
+        } else if (blocksci::heuristics::isWasabi1CoinJoin(tx)) {
+            return blocksci::heuristics::CoinJoinType::WW1;
+        }  else {
+            return blocksci::heuristics::CoinJoinType::None;
         }
     }
 }  // namespace heuristics
