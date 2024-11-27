@@ -47,6 +47,9 @@ namespace blocksci {
 
     HWWalletRemixResult BLOCKSCI_EXPORT isLongDormantInRemixes(const Transaction &tx);
 
+    CoinJoinType BLOCKSCI_EXPORT getCoinjoinTag(const Transaction &tx);
+    
+
     // consolidation
 
     ConsolidationType BLOCKSCI_EXPORT getConsolidationType(const Transaction &tx, double inputOutputRatio = 2);
