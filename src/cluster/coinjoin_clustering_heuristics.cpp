@@ -105,18 +105,16 @@ namespace blocksci {
                     continue;
                 }
 
-                // int from_coinjoin = 0;
-                // for (const auto& input : spending_tx.inputs()) {
-                //     if (coinjoinTransactions.count(input.getSpentTx())) {
-                //         from_coinjoin++;
-                //     }
-                // }
-
-                // if (static_cast<double>(from_coinjoin) <= 0.5 * static_cast<double>(spending_tx.inputCount())) {
-                //     continue;
-                // }
-
                 auto spending_tx_output_address = spending_tx.outputs()[0].getAddress();
+                auto maxOutputValue = spending_tx.outputs()[0].getValue();
+                for (const auto &output: spending_tx.outputs()) {
+                    if (output.getValue() > maxOutputValue) {
+                        spending_tx_output_address = output.getAddress();
+                        maxOutputValue = output.getValue();
+                    }
+                }
+
+
                 if (collectedAddresses.find(spending_tx_output_address) == collectedAddresses.end()) {
                     continue;
                 }

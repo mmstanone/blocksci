@@ -105,14 +105,9 @@ void init_coinjoin_cluster_manager(pybind11::module &s) {
             "scripts")
         .def_static(
             "create_clustering",
-            [](Blockchain &chain, BlockHeight start, BlockHeight stop, const std::vector<std::string> &heuristics,
+            [](Blockchain &chain, BlockHeight start, BlockHeight stop, blocksci::coinjoin_heuristics::ClusteringHeuristic heuristicFunc,
                const std::string &outputPath, bool overwrite, std::string coinjoinType) {
                 py::scoped_ostream_redirect stream(std::cout, py::module::import("sys").attr("stdout"));
-
-                auto heuristicFunc = blocksci::coinjoin_heuristics::getClusteringHeuristic("None");
-                for (const auto &heuristic : heuristics) {
-                    heuristicFunc = heuristicFunc & blocksci::coinjoin_heuristics::getClusteringHeuristic(heuristic);
-                }
 
                 if (stop == -1) {
                     stop = chain.size();
@@ -121,15 +116,9 @@ void init_coinjoin_cluster_manager(pybind11::module &s) {
                 return CoinjoinClusterManager::createClustering(range, heuristicFunc, outputPath, overwrite,
                                                                 coinjoinType);
             },
-            py::arg("chain"), py::arg("start"), py::arg("stop"), py::arg("heuristics"), py::arg("output_path"),
+            py::arg("chain"), py::arg("start"), py::arg("stop"), py::arg("heuristicFunc"), py::arg("output_path"),
             py::arg("overwrite") = false, py::arg("coinjoin_type") = "None",
             "Creates a clustering of the blockchain using the given heuristic and saves it to the given output path.\n"
-            "Possible heuristics are:\n"
-            "- 'None': No heuristic is used\n"
-            "- 'OneOutputConsolidation': Clusters are created based on transactions with multiple inputs and one "
-            "output\n"
-            "- 'OneInputConsolidation': Clusters are created based on transactions with one input and multiple "
-            "outputs\n\n"
             "Possible coinjoin types are:\n"
             "- 'none': No coinjoin type is used\n"
             "- 'wasabi2': Wasabi CoinJoin type 2\n"
