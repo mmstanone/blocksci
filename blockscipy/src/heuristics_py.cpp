@@ -30,7 +30,7 @@ void init_heuristics(py::module &m) {
         .value("WW2PostzkSNACKs", heuristics::CoinJoinType::WW2PostzkSNACKs)
         .value("WW1", heuristics::CoinJoinType::WW1)
         .value("Whirlpool", heuristics::CoinJoinType::Whirlpool)
-        .value("None", heuristics::CoinJoinType::None);
+        .value("NoCJ", heuristics::CoinJoinType::None);
         
     py::enum_<heuristics::CoinJoinResult>(m, "CoinJoinResult")
         .value("True", heuristics::CoinJoinResult::True)
@@ -232,7 +232,11 @@ void init_heuristics(py::module &m) {
             "Return a ClusteringHeuristic object implementing the clustering over consolidations of outputs happening three hops after the coinjoin tx.")
         .def_property_readonly_static(
             "none", [](pybind11::object &) { return blocksci::coinjoin_heuristics::ClusteringHeuristic{blocksci::coinjoin_heuristics::NoClustering{}}; },
-            "Return a ClusteringHeuristic object implementing no clustering heuristic: This effectively does nothing.");
+            "Return a ClusteringHeuristic object implementing no clustering heuristic: This effectively does nothing.")
+        .def_property_readonly_static(
+            "output_one_hop_with_change", [](pybind11::object &) { return blocksci::coinjoin_heuristics::ClusteringHeuristic{blocksci::coinjoin_heuristics::OneOutputConsolidationWithChange{}}; },
+            "Return a ClusteringHeuristic object implementing the clustering over consolidations of outputs happening one hop after the coinjoin tx and the consolidation transactions have 2 outputs - main and change.")
+            ;
 
 
 

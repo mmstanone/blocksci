@@ -17,6 +17,7 @@
 #include <blocksci/cluster/coinjoin_cluster_manager.hpp>
 #include <blocksci/cluster/coinjoin_clustering_heuristics.hpp>
 #include <blocksci/heuristics/change_address.hpp>
+#include <blocksci/heuristics/tx_identification.hpp>
 #include <range/v3/range_for.hpp>
 
 #include "caster_py.hpp"

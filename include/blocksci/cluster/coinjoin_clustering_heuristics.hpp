@@ -18,6 +18,7 @@ namespace blocksci {
         struct BLOCKSCI_EXPORT ClusteringHeuristicsType {
             enum Enum {
                 OneOutputConsolidation,
+                OneOutputConsolidationWithChange,
                 OneInputConsolidation,
                 OneHopOutputThresholdConsolidation,
                 TwoHopOutputThresholdConsolidation,
@@ -62,6 +63,8 @@ namespace blocksci {
         };
 
         using OneOutputConsolidation = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidation>;
+        using OneOutputConsolidationWithChange =
+            ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidationWithChange>;
         using OneInputConsolidation = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneInputConsolidation>;
         using OneHopOutputThresholdConsolidation =
             ClusteringHeuristicImpl<ClusteringHeuristicsType::OneHopOutputThresholdConsolidation>;
@@ -71,8 +74,6 @@ namespace blocksci {
         using ThreeHopOutputThresholdConsolidation =
             ClusteringHeuristicImpl<ClusteringHeuristicsType::ThreeHopOutputThresholdConsolidation>;
         using NoClustering = ClusteringHeuristicImpl<ClusteringHeuristicsType::None>;
-
-        ClusteringHeuristic BLOCKSCI_EXPORT getClusteringHeuristic(const std::string& heuristicName);
 
     }  // namespace coinjoin_heuristics
 }  // namespace blocksci
