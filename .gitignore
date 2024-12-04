@@ -19,3 +19,6 @@ venv
 cmake-build-debug
 .vscode
 *.ipynb_checkpoints
+
+*.png
+*.pdf
