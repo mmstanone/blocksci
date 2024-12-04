@@ -15,11 +15,20 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include <wjfilesystem/path.h>
+#include <stdint.h>
 
 #include <string>
 #include <vector>
+#include <boost/optional.hpp>
 
 namespace blocksci {
+
+    struct CoinJoinConfiguration {
+        int64_t FirstSamouraiBlock;
+        int64_t FirstWasabiBlock;
+        int64_t FirstWasabi2Block;
+        int64_t FirstWasabiNoCoordAddressBlock;
+    };
     
     struct ChainConfiguration {
         std::string coinName;
@@ -37,6 +46,8 @@ namespace blocksci {
 
         /** If segwit is supported, the block height it was activated at, otherwise defaults to std::numeric_limits<BlockHeight>::max() */
         BlockHeight segwitActivationHeight;
+
+        boost::optional<CoinJoinConfiguration> coinJoinConfiguration = boost::none;
         
         static ChainConfiguration bitcoin(const std::string &chainDir);
         static ChainConfiguration bitcoinTestnet(const std::string &chainDir);
@@ -91,6 +102,9 @@ namespace blocksci {
     
     void to_json(nlohmann::json& j, const ChainConfiguration& p);
     void from_json(const nlohmann::json& j, ChainConfiguration& p);
+
+    void to_json(nlohmann::json& j, const CoinJoinConfiguration& p);
+    void from_json(const nlohmann::json& j, CoinJoinConfiguration& p);
 }
 
 #endif /* chain_configuration_h */

@@ -13,6 +13,20 @@
 using json = nlohmann::json;
 
 namespace blocksci {
+
+    void to_json(json& j, const CoinJoinConfiguration &p) {
+        j["FirstSamouraiBlock"] = p.FirstSamouraiBlock;
+        j["FirstWasabiBlock"] = p.FirstWasabiBlock;
+        j["FirstWasabi2Block"] = p.FirstWasabi2Block;
+        j["FirstWasabiNoCoordAddressBlock"] = p.FirstWasabiNoCoordAddressBlock;
+    }
+
+    void from_json(const json& j, CoinJoinConfiguration &p) {
+        j.at("FirstSamouraiBlock").get_to(p.FirstSamouraiBlock);
+        j.at("FirstWasabiBlock").get_to(p.FirstWasabiBlock);
+        j.at("FirstWasabi2Block").get_to(p.FirstWasabi2Block);
+        j.at("FirstWasabiNoCoordAddressBlock").get_to(p.FirstWasabiNoCoordAddressBlock);
+    }
     
     void to_json(json& j, const ChainConfiguration& p) {
         j = json{
@@ -21,8 +35,11 @@ namespace blocksci {
             {"pubkeyPrefix", p.pubkeyPrefix},
             {"scriptPrefix", p.scriptPrefix},
             {"segwitPrefix", p.segwitPrefix},
-            {"segwitActivationHeight", p.segwitActivationHeight}
+            {"segwitActivationHeight", p.segwitActivationHeight},
         };
+        if (p.coinJoinConfiguration) {
+            to_json(j, p.coinJoinConfiguration.value());
+        }
     }
     
     void from_json(const json& j, ChainConfiguration& p) {
@@ -34,6 +51,9 @@ namespace blocksci {
         j.at("scriptPrefix").get_to(p.scriptPrefix);
         j.at("segwitPrefix").get_to(p.segwitPrefix);
         j.at("segwitActivationHeight").get_to(p.segwitActivationHeight);
+        if (j.find("coinJoinConfiguration") != j.end()) {
+            p.coinJoinConfiguration = j.at("coinJoinConfiguration").get<CoinJoinConfiguration>();
+        }
     }
     
     void to_json(json& j, const ChainRPCConfiguration& p) {
@@ -153,7 +173,8 @@ namespace blocksci {
             {111},
             {196},
             "bcrt",
-            0
+            0, 
+            CoinJoinConfiguration{0,0,0,0}  // Set all block heights to 0 and search whole regtest
         };
     }
     
@@ -164,7 +185,8 @@ namespace blocksci {
             std::vector<unsigned char>(1,0),
             std::vector<unsigned char>(1,5),
             "bc",
-            481824
+            481824,
+            CoinJoinConfiguration{570000, 530500, 741213, 610000}  // SW, WW1, WW2, WW1 no static coordinator
         };
     }
     
@@ -175,7 +197,8 @@ namespace blocksci {
             std::vector<unsigned char>(1,111),
             std::vector<unsigned char>(1,196),
             "tb",
-            834624
+            834624, 
+            CoinJoinConfiguration{0, 0, 0, 0}  // Set all block heights to 0 and search whole testnet
         };
     }
     
@@ -217,7 +240,7 @@ namespace blocksci {
             username,
             password,
             "127.0.0.1",
-            8332
+            8332,
         };
     }
     
