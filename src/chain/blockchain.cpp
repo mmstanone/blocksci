@@ -34,7 +34,6 @@ namespace blocksci {
     Blockchain::Blockchain(const DataConfiguration &config) : Blockchain(std::make_unique<DataAccess>(config)) {
         if (config.chainConfig.coinJoinConfiguration) {
             auto &cjConfig = config.chainConfig.coinJoinConfiguration.value();
-            std::cout << "Config loaded: " << cjConfig.FirstSamouraiBlock << " " << cjConfig.FirstWasabiBlock << " " << cjConfig.FirstWasabi2Block << " " << cjConfig.FirstWasabiNoCoordAddressBlock << std::endl;
             CoinjoinUtils::FirstSamouraiBlock = cjConfig.FirstSamouraiBlock;
             CoinjoinUtils::FirstWasabiBlock = cjConfig.FirstWasabiBlock;
             CoinjoinUtils::FirstWasabi2Block = cjConfig.FirstWasabi2Block;
