@@ -4,6 +4,7 @@
 #define coinjoin_cluster_manager_hpp
 
 #include <blocksci/blocksci_export.h>
+#include <blocksci/heuristics/tx_identification.hpp>
 
 #include <functional>
 #include <iostream>

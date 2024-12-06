@@ -113,5 +113,7 @@ add_library(rocksdb_headers INTERFACE)
 target_include_directories(rocksdb_headers SYSTEM INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/rocksdb/include)
 
 set(CMAKE_CXX_FLAGS "${saved_flags}")
-
+set(saved_flags2 "${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
 add_subdirectory(bitcoin-api-cpp EXCLUDE_FROM_ALL)
+set(CMAKE_CXX_FLAGS "${saved_flags2}")

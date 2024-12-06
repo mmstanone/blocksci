@@ -10,7 +10,6 @@ backports.zoneinfo==0.2.1
 beautifulsoup4==4.12.3
 bech32==1.2.0
 bleach==6.1.0
--e git+git@github.com:mmstanone/blocksci.git@6ac64d128a474c2623a5d353492b9d853921b3b7#egg=blocksci&subdirectory=blockscipy
 certifi==2019.11.28
 cffi==1.17.1
 chardet==3.0.4

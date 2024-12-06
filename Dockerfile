@@ -18,15 +18,15 @@ ADD . /blocksci
 
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-RUN /root/.cargo/bin/uv python install 3.8.20
-RUN /root/.cargo/bin/uv python pin 3.8.20
+RUN /root/.local/bin/uv python install 3.8.20
+RUN /root/.local/bin/uv python pin 3.8.20
 
-RUN /root/.cargo/bin/uv run which pip3
+RUN /root/.local/bin/uv run which pip3
 
 RUN mkdir -p /usr/lib/python3.8/site-packages/
 
 RUN cd /blocksci && \
-    /root/.cargo/bin/uv venv && CC=gcc-7 CXX=g++ /root/.cargo/bin/uv run pip3 install -r /blocksci/pip-all-requirements.txt
+    /root/.local/bin/uv venv && CC=gcc-7 CXX=g++ /root/.local/bin/uv run pip3 install -r /blocksci/pip-all-requirements.txt
 
 # Build BlockSci
 RUN cd blocksci && \
@@ -41,7 +41,7 @@ RUN cd blocksci && \
 # Install BlockSci Python bindings
 
 RUN cd blocksci && rm -rf blockscipy/build && \
-    /root/.cargo/bin/uv venv && CC=gcc-7 CXX=g++-7 /root/.cargo/bin/uv run pip3 install -e blockscipy
+    /root/.local/bin/uv venv && CC=gcc-7 CXX=g++-7 /root/.local/bin/uv run pip3 install -e blockscipy
 
 # remove the build folder for blockscipy, as we will rebuild again anyway
 
