@@ -32,15 +32,13 @@ namespace blocksci {
     
     
     Blockchain::Blockchain(const DataConfiguration &config) : Blockchain(std::make_unique<DataAccess>(config)) {
-        if (config.chainConfig.coinName.find("test") != std::string::npos) {
-            std::cout << "You are using configuration for testnet/regtest chain." << std::endl;
-            std::cout << "Setting block boundaries used to detect CoinJoins to 0..." << std::endl;
-            blocksci::CoinjoinUtils::FirstSamouraiBlock = 0;
-            blocksci::CoinjoinUtils::FirstWasabiBlock = 0;
-            blocksci::CoinjoinUtils::FirstWasabi2Block = 0;
-            blocksci::CoinjoinUtils::FirstWasabiNoCoordAddressBlock = 0;
+        if (config.chainConfig.coinJoinConfiguration) {
+            auto &cjConfig = config.chainConfig.coinJoinConfiguration.value();
+            CoinjoinUtils::FirstSamouraiBlock = cjConfig.FirstSamouraiBlock;
+            CoinjoinUtils::FirstWasabiBlock = cjConfig.FirstWasabiBlock;
+            CoinjoinUtils::FirstWasabi2Block = cjConfig.FirstWasabi2Block;
+            CoinjoinUtils::FirstWasabiNoCoordAddressBlock = cjConfig.FirstWasabiNoCoordAddressBlock;
         }
-
     }
     
     Blockchain::Blockchain(const std::string &configPath, BlockHeight maxBlock) : Blockchain(loadBlockchainConfig(configPath, true, maxBlock)) {}

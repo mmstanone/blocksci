@@ -389,7 +389,9 @@ void init_coinjoin_module(py::class_<Blockchain> &cl) {
                             pointingToTransactions[spendingTx].push_back(output.getValue());
                         }
 
-                        for (const auto &[spendingTx, values] : pointingToTransactions) {
+                        for (const auto &[key, values] : pointingToTransactions) {
+                            (void)key;
+
                             if (values.size() < 2) continue;
                             for (const auto &value : values) {
                                 anonymitySets[value]--;
@@ -400,6 +402,7 @@ void init_coinjoin_module(py::class_<Blockchain> &cl) {
                     // compute log(a1! * a2! * a3!...) where a_i is the size of the ith anonymity set using lgamma
                     double resultValue = 0;
                     for (const auto &[key, value] : anonymitySets) {
+                        (void)key;
                         resultValue += lgamma(value + 1) / log(2);
                     }
 
@@ -423,5 +426,145 @@ void init_coinjoin_module(py::class_<Blockchain> &cl) {
                                                                                                           reduce_func);
             },
             "Compute anonymity degradation in coinjoins", pybind11::arg("start"), pybind11::arg("stop"),
-            pybind11::arg("coinjoinType"), pybind11::arg("daysToConsider"));
+            pybind11::arg("coinjoinType"), pybind11::arg("daysToConsider"))
+        .def(
+            "real_anonymity_degradation",
+            [](Blockchain &chain, BlockHeight start, BlockHeight stop, int daysToConsider, std::string coinjoinType) {
+                // CJTX and its anonymity sets
+                using AnonymitySetsFuncType = std::unordered_map<Transaction, std::unordered_map<int64_t, int64_t>>;
+                // For txes which consolidate inputs from multiple cjtxes. CJTX = Transaction, map = <value, count>
+                // value = the anonymity set, count = how many times it appears in the consolidation tx (how much it
+                // degrades the anonymity set)
+                using PointingToTransactionsType =
+                    std::unordered_map<Transaction, std::unordered_map<int64_t, int64_t>>;
+
+                auto filteringFunc = [&](const Transaction &tx) -> bool {
+                    auto is_coinjoin_type = [&](const Transaction &tx, const std::string &coinjoinType) {
+                        if (coinjoinType == "ww2") return blocksci::heuristics::isWasabi2CoinJoin(tx);
+                        if (coinjoinType == "ww1") return blocksci::heuristics::isWasabi1CoinJoin(tx);
+                        if (coinjoinType == "wp") return blocksci::heuristics::isWhirlpoolCoinJoin(tx);
+                        return false;
+                    };
+                    return is_coinjoin_type(tx, coinjoinType);
+                };
+
+                auto mapFunc = [&](const Transaction &tx) -> AnonymitySetsFuncType {
+                    if (!filteringFunc(tx)) {
+                        return {};
+                    }
+
+                    AnonymitySetsFuncType result;
+                    auto anonymitySets = std::unordered_map<int64_t, int64_t>();
+
+                    for (const auto &output : tx.outputs()) {
+                        anonymitySets[output.getValue()]++;
+                    }
+
+                    result[tx] = anonymitySets;
+                    return result;
+                };
+
+                auto reduceFunc = [](AnonymitySetsFuncType &map1,
+                                     AnonymitySetsFuncType &map2) -> AnonymitySetsFuncType & {
+                    for (const auto &[key, value] : map2) {
+                        if (map1.find(key) == map1.end()) {
+                            map1[key] = value;
+                        } else {
+                            for (const auto &[key2, value2] : value) {
+                                if (map1[key].find(key2) == map1[key].end()) {
+                                    map1[key][key2] = value2;
+                                } else {
+                                    map1[key][key2] += value2;
+                                }
+                            }
+                        }
+                    }
+                    return map1;
+                };
+
+                auto initialAnonymitySets =
+                    chain[{start, stop}].mapReduce<AnonymitySetsFuncType, decltype(mapFunc), decltype(reduceFunc)>(
+                        mapFunc, reduceFunc);
+
+                auto mapFunc2 = [&](const Transaction &tx) -> PointingToTransactionsType {
+                    PointingToTransactionsType result;
+                    auto coinJoinTag = blocksci::heuristics::getCoinjoinTag(tx);
+                    if (coinJoinTag != blocksci::heuristics::CoinJoinType::None) {
+                        return {};
+                    }
+                    for (const auto &input : tx.inputs()) {
+                        auto inputTx = input.getSpentTx();
+                        if (tx.block().timestamp() - inputTx.block().timestamp() > daysToConsider * 24 * 60 * 60) {
+                            continue;
+                        }
+
+                        if (initialAnonymitySets.find(inputTx) == initialAnonymitySets.end()) {
+                            continue;
+                        }
+
+                        if (result.find(inputTx) == result.end()) {
+                            result[inputTx] = {};
+                        }
+
+                        if (result[inputTx].find(input.getValue()) == result[inputTx].end()) {
+                            result[inputTx][input.getValue()] = 1;
+                        } else {
+                            result[inputTx][input.getValue()]++;
+                        }
+                    }
+                    auto sum = 0;
+
+                    for (const auto &[cjtx, anonymitySet] : result) {
+                        for (const auto &[value, count] : anonymitySet) {
+                            sum += count;
+                        }
+                    }
+
+                    return sum > 1 ? result : PointingToTransactionsType{};
+                };
+
+                auto reduceFunc2 = [&](PointingToTransactionsType &map1,
+                                       PointingToTransactionsType &map2) -> PointingToTransactionsType & {
+                    for (const auto &[tx, anonymitySets] : map2) {
+                        if (map1.find(tx) == map1.end()) {
+                            map1[tx] = anonymitySets;
+                        } else {
+                            for (const auto &[value, count] : anonymitySets) {
+                                if (map1[tx].find(value) == map1[tx].end()) {
+                                    map1[tx][value] = count;
+                                } else {
+                                    map1[tx][value] += count;
+                                }
+                            }
+                        }
+                    }
+                    return map1;
+                };
+                if (daysToConsider > 0) {
+                    auto pointingToTransactions =
+                        chain[{start, stop}]
+                            .mapReduce<PointingToTransactionsType, decltype(mapFunc2), decltype(reduceFunc2)>(
+                                mapFunc2, reduceFunc2);
+
+                    for (const auto &[tx, anonymitySets] : pointingToTransactions) {
+                        for (const auto &[value, count] : anonymitySets) {
+                            initialAnonymitySets[tx][value] -= count;
+                        }
+                    }
+                }
+
+                std::unordered_map<Transaction, double> result;
+                for (const auto &[tx, anonymitySets] : initialAnonymitySets) {
+                    double resultValue = 0;
+                    for (const auto &[key, value] : anonymitySets) {
+                        resultValue += lgamma(value + 1) / log(2);
+                    }
+                    result[tx] = resultValue;
+                }
+
+                return result;
+            },
+            "Compute real anonymity degradation in coinjoins", pybind11::arg("start"), pybind11::arg("stop"),
+            pybind11::arg("daysToConsider"), pybind11::arg("coinjoinType"));
+    ;
 }

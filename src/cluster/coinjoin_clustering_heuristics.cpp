@@ -72,19 +72,70 @@ namespace blocksci {
             }
         }
 
+        /**
+         * Consolidate addresses of transactions which have exactly 2 outputs - one main and one change.
+         * Link all of the input addresses with the change address.
+         */
+        static void one_output_consolidation_with_change(const Transaction& tx,
+                                             const std::unordered_set<Transaction>& coinjoinTransactions,
+                                             AddressDisjointSets& ds,
+                                             const std::unordered_map<Address, uint32_t>& collectedAddresses) {
+            // --> go this way
+            for (const auto& output : tx.outputs()) {
+                if (!output.isSpent()) continue;
+
+                auto nextTx = output.getSpendingTx().value();
+
+                if (nextTx.outputCount() != 2) {
+                    continue;
+                }
+
+                auto nextTxOutputAddress = nextTx.outputs()[0].getValue() < nextTx.outputs()[1].getValue() ? nextTx.outputs()[0].getAddress() : nextTx.outputs()[1].getAddress();
+
+                if (coinjoinTransactions.count(nextTx)) {
+                    continue;
+                }
+
+                if (collectedAddresses.find(nextTxOutputAddress) == collectedAddresses.end()) {
+                    continue;
+                }
+
+                for (const auto& nextLevelInput : nextTx.inputs()) {
+                    auto nextLevelInputAddress = nextLevelInput.getAddress();
+                    if (collectedAddresses.find(nextTxOutputAddress) == collectedAddresses.end()) {
+                        continue;
+                    }
+
+                    ds.link_addresses(nextTxOutputAddress, nextLevelInputAddress);
+                }
+            }
+        }
+
+        /**
+         * Consolidate addresses based on the output threshold heuristic.
+         * This is different than other heuristics, because the emphasis is on the ratio of inputs to outputs.
+         * Since there can be more outputs and we are not sure which one belongs to the same entity, we link only the inputs.
+         * 
+         * @param tx The transaction to process
+         * @param coinjoinTransactions The set of coinjoin transactions
+         * @param ds The disjoint set to update
+         * @param collectedAddresses The set of addresses to consider
+         * @param hops The number of hops to consider
+         * @param visitedTransactions The set of visited transactions (for recursion)
+         * 
+         * @return void
+         */
         void one_hop_output_threshold_consolidation(const Transaction& tx,
                                                     const std::unordered_set<Transaction>& coinjoinTransactions,
                                                     AddressDisjointSets& ds,
                                                     const std::unordered_map<Address, uint32_t>& collectedAddresses,
                                                     int hops, std::unordered_set<Transaction>& visitedTransactions) {
-            // Avoid processing the same transaction multiple times
             if (visitedTransactions.count(tx)) {
                 return;
             }
             visitedTransactions.insert(tx);
 
 
-            // Iterate through all outputs of the transaction
             for (const auto& output : tx.outputs()) {
                 if (!output.isSpent()) continue;
 
@@ -94,32 +145,16 @@ namespace blocksci {
                     continue;
                 }
 
-                // Recursively process the spending transaction if hops remain
                 if (hops > 0) {
                     one_hop_output_threshold_consolidation(spending_tx, coinjoinTransactions, ds, collectedAddresses,
                                                            hops - 1, visitedTransactions);
                 }
 
-                // Check if the spending transaction is a consolidation transaction
-                if (1.5 * spending_tx.inputCount() <= spending_tx.outputCount()) {
+                if (tx.outputCount() > 1 && 5 * spending_tx.inputCount() <= spending_tx.outputCount()) {
                     continue;
                 }
 
-                // int from_coinjoin = 0;
-                // for (const auto& input : spending_tx.inputs()) {
-                //     if (coinjoinTransactions.count(input.getSpentTx())) {
-                //         from_coinjoin++;
-                //     }
-                // }
-
-                // if (static_cast<double>(from_coinjoin) <= 0.5 * static_cast<double>(spending_tx.inputCount())) {
-                //     continue;
-                // }
-
-                auto spending_tx_output_address = spending_tx.outputs()[0].getAddress();
-                if (collectedAddresses.find(spending_tx_output_address) == collectedAddresses.end()) {
-                    continue;
-                }
+                auto base_address = spending_tx.inputs()[0].getAddress();
 
                 for (const auto& input : spending_tx.inputs()) {
                     auto input_tx = input.getSpentTx();
@@ -132,10 +167,8 @@ namespace blocksci {
                         continue;
                     }
 
-                    ds.link_addresses(spending_tx_output_address, input_address);
+                    ds.link_addresses(base_address, input_address);
                 }
-
-
             }
         }
 
@@ -153,6 +186,13 @@ namespace blocksci {
             const Transaction& tx, const std::unordered_set<Transaction>& coinjoinTransactions, AddressDisjointSets& ds,
             const std::unordered_map<Address, uint32_t>& collectedAddresses) const {
             one_output_consolidation(tx, coinjoinTransactions, ds, collectedAddresses);
+        }
+
+        template <>
+        void ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidationWithChange>::operator()(
+            const Transaction& tx, const std::unordered_set<Transaction>& coinjoinTransactions, AddressDisjointSets& ds,
+            const std::unordered_map<Address, uint32_t>& collectedAddresses) const {
+            one_output_consolidation_with_change(tx, coinjoinTransactions, ds, collectedAddresses);
         }
 
         template <>
@@ -189,30 +229,5 @@ namespace blocksci {
             one_hop_output_threshold_consolidation_wrapper(tx, coinjoinTransactions, ds, collectedAddresses, 2);
         }
 
-        ClusteringHeuristic getClusteringHeuristic(const std::string& heuristicName) {
-            if (heuristicName == "OneOutputConsolidation") {
-                std::cout << "Using heuristic: OneOutputConsolidation" << std::endl;
-                return ClusteringHeuristic(OneOutputConsolidation{});
-            } else if (heuristicName == "OneInputConsolidation") {
-                std::cout << "Using heuristic: OneInputConsolidation" << std::endl;
-                return ClusteringHeuristic(OneInputConsolidation{});
-            } else if (heuristicName == "None") {
-                std::cout << "Using heuristic: None" << std::endl;
-                return ClusteringHeuristic(NoClustering{});
-            } else if (heuristicName == "OneHopOutputThresholdConsolidation") {
-                std::cout << "Using heuristic: OneHopOutputThresholdConsolidation" << std::endl;
-                return ClusteringHeuristic(OneHopOutputThresholdConsolidation{});
-            } else if (heuristicName == "TwoHopOutputThresholdConsolidation") {
-                std::cout << "Using heuristic: TwoHopOutputThresholdConsolidation" << std::endl;
-                return ClusteringHeuristic(TwoHopOutputThresholdConsolidation{});
-            } else if (heuristicName == "ThreeHopOutputThresholdConsolidation") {
-                std::cout << "Using heuristic: ThreeHopOutputThresholdConsolidation" << std::endl;
-                return ClusteringHeuristic(ThreeHopOutputThresholdConsolidation{});
-            }
-
-            else {
-                throw std::invalid_argument("Invalid heuristic name");
-            }
-        }
     }  // namespace coinjoin_heuristics
 }  // namespace blocksci

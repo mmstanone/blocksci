@@ -17,9 +17,7 @@ jupyter contrib nbextension install --user
 
 CC=gcc-7 CXX=g++-7 pip3 install -e blockscipy || exit 1
 
-source .venv/bin/activate
-
 cd Notebooks
 
-jupyter notebook --ip=0.0.0.0 --allow-root || exit 1
+jupyter notebook --ip="0.0.0.0" --allow-root || exit 1
 

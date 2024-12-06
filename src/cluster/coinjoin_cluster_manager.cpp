@@ -18,7 +18,6 @@
 #include <blocksci/cluster/coinjoin_clustering_heuristics.hpp>
 #include <blocksci/core/dedup_address.hpp>
 #include <blocksci/heuristics/change_address.hpp>
-#include <blocksci/heuristics/tx_identification.hpp>
 #include <blocksci/scripts/scripthash_script.hpp>
 #include <fstream>
 #include <future>
@@ -219,6 +218,8 @@ namespace blocksci {
     /**
      * Collect addresses within `maxHops` from a set of transactions `startTransactions`.
      * This is used to collect addresses around CoinJoin transactions gathered in a different step.
+     * 
+     * This method also assigns a global index to the addresses.
      */
     std::unordered_map<Address, uint32_t> collectAddressesWithinHops(
         const std::unordered_set<Transaction> &startTransactions, int maxHops) {
@@ -234,24 +235,21 @@ namespace blocksci {
                 if (processedTransactions.count(tx)) continue;
                 processedTransactions.insert(tx);
 
-                // Collect addresses from inputs
                 for (const auto &input : tx.inputs()) {
+                    // don't increment the index if the address is already in the map
                     auto [_, res] = collectedAddresses.insert(std::make_pair(input.getAddress(), index));
                     if (res) index++;
 
-                    // Get previous transaction
                     auto prevTx = input.getSpentTx();
                     if (processedTransactions.count(prevTx) == 0) {
                         nextTransactions.insert(prevTx);
                     }
                 }
 
-                // Collect addresses from outputs
                 for (const auto &output : tx.outputs()) {
                     auto [_, res] = collectedAddresses.insert(std::make_pair(output.getAddress(), index));
                     if (res) index++;
 
-                    // Get spending transaction if any
                     if (output.isSpent()) {
                         auto nextTx = output.getSpendingTx().value();
                         if (processedTransactions.count(nextTx) == 0) {
@@ -434,7 +432,6 @@ namespace blocksci {
 
         auto clusterIDs = collectClusterIDs(collectedAddresses, totalAddressCount, parents, scriptStarts);
 
-        // Remap cluster IDs to be contiguous
         uint32_t remappedClusterCount = remapClusterIdsForCoinJoins(clusterIDs);
 
         std::cout << "Serializing cluster data" << std::endl;

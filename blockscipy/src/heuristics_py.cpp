@@ -8,6 +8,7 @@
 #include <blocksci/chain/blockchain.hpp>
 #include <blocksci/chain/transaction.hpp>
 #include <blocksci/heuristics.hpp>
+#include <blocksci/cluster/coinjoin_clustering_heuristics.hpp>
 
 #include "caster_py.hpp"
 #include "proxy.hpp"
@@ -17,9 +18,11 @@
 namespace py = pybind11;
 using namespace blocksci;
 using namespace blocksci::heuristics;
+using namespace blocksci::coinjoin_heuristics;
 
 struct Heuristics {};
 struct Change {};
+struct CoinJoinHeuristic {};
 
 void init_heuristics(py::module &m) {
     py::enum_<heuristics::CoinJoinType>(m, "CoinJoinType")
@@ -27,7 +30,7 @@ void init_heuristics(py::module &m) {
         .value("WW2PostzkSNACKs", heuristics::CoinJoinType::WW2PostzkSNACKs)
         .value("WW1", heuristics::CoinJoinType::WW1)
         .value("Whirlpool", heuristics::CoinJoinType::Whirlpool)
-        .value("None", heuristics::CoinJoinType::None);
+        .value("NoCJ", heuristics::CoinJoinType::None);
         
     py::enum_<heuristics::CoinJoinResult>(m, "CoinJoinResult")
         .value("True", heuristics::CoinJoinResult::True)
@@ -191,5 +194,50 @@ void init_heuristics(py::module &m) {
             "spent", [](pybind11::object &) { return ChangeHeuristic{Spent{}}; },
             "Return a ChangeHeuristic object that selects spent outputs. Useful in combination with heuristics that "
             "select unspent outputs as candidates.");
+
+        py::class_<CoinJoinHeuristic> s3(cl, "coinjoin");
+
+        py::class_<ClusteringHeuristic>(s3, "c", "Class representing a CoinJoin clustering heuristic")
+            // .def(py::init([](Proxy<void> &heuristic) {
+            //     std::function<void(const Transaction& tx, const std::unordered_set<Transaction>& coinjoinTransactions,
+            //             AddressDisjointSets& ds, std::unordered_map<Address, uint32_t>& collectedAddresses)> clusteringFunc =
+            //         [heuristic](const Transaction& tx, const std::unordered_set<Transaction>& coinjoinTransactions,
+            //             AddressDisjointSets& ds, std::unordered_map<Address, uint32_t>& collectedAddresses) { return heuristic(tx, coinjoinTransactions, ds, collectedAddresses); };
+            //     return ClusteringHeuristic(clusteringFunc);
+            // }))
+            .def("__and__", [](ClusteringHeuristic &this_heuristic, ClusteringHeuristic &other_heuristic) { return this_heuristic & other_heuristic; }, py::arg("other_heuristic"),
+                "Return a new heuristic that clusters based on _both_ heuristics.");
+            // .def_property_readonly(
+            //     "__call__",
+            //     [](ClusteringHeuristic &ch) -> Proxy<void> {
+            //         return lift(makeSimpleProxy<Transaction>(), [ch](const Transaction &tx) { return ch(tx); });
+            //     },
+            //     "Return all outputs matching the change heuristic")
+
+
+        s3.def_property_readonly_static(
+          "input_one_hop", [](pybind11::object &) { return blocksci::coinjoin_heuristics::ClusteringHeuristic{blocksci::coinjoin_heuristics::OneInputConsolidation{}}; },
+          "Return a ClusteringHeuristic object implementing the clustering over consolidations of inputs happening one hop before the coinjoin tx.")
+        .def_property_readonly_static(
+            "output_one_hop", [](pybind11::object &) { return blocksci::coinjoin_heuristics::ClusteringHeuristic{blocksci::coinjoin_heuristics::OneOutputConsolidation{}}; },
+            "Return a ClusteringHeuristic object implementing the clustering over consolidations of outputs happening one hop after the coinjoin tx and the consolidation transactions have ONLY 1 OUTPUT.")
+        .def_property_readonly_static(
+            "output_one_hop_threshold", [](pybind11::object &) { return blocksci::coinjoin_heuristics::ClusteringHeuristic{blocksci::coinjoin_heuristics::OneHopOutputThresholdConsolidation{}}; },
+            "Return a ClusteringHeuristic object implementing the clustering over consolidations of outputs happening one hop after the coinjoin tx.")
+        .def_property_readonly_static(
+            "output_two_hop_threshold", [](pybind11::object &) { return blocksci::coinjoin_heuristics::ClusteringHeuristic{blocksci::coinjoin_heuristics::TwoHopOutputThresholdConsolidation{}}; },
+            "Return a ClusteringHeuristic object implementing the clustering over consolidations of outputs happening two hops after the coinjoin tx.")
+        .def_property_readonly_static(
+            "output_three_hop_threshold", [](pybind11::object &) { return blocksci::coinjoin_heuristics::ClusteringHeuristic{blocksci::coinjoin_heuristics::ThreeHopOutputThresholdConsolidation{}}; },
+            "Return a ClusteringHeuristic object implementing the clustering over consolidations of outputs happening three hops after the coinjoin tx.")
+        .def_property_readonly_static(
+            "none", [](pybind11::object &) { return blocksci::coinjoin_heuristics::ClusteringHeuristic{blocksci::coinjoin_heuristics::NoClustering{}}; },
+            "Return a ClusteringHeuristic object implementing no clustering heuristic: This effectively does nothing.")
+        .def_property_readonly_static(
+            "output_one_hop_with_change", [](pybind11::object &) { return blocksci::coinjoin_heuristics::ClusteringHeuristic{blocksci::coinjoin_heuristics::OneOutputConsolidationWithChange{}}; },
+            "Return a ClusteringHeuristic object implementing the clustering over consolidations of outputs happening one hop after the coinjoin tx and the consolidation transactions have 2 outputs - main and change.")
+            ;
+
+
 
 }
