@@ -1,11 +1,14 @@
 #!/bin/bash
 
+THREADS=$1 || 18
+
+echo "Using $THREADS threads"
 cd /mnt/blocksci
 
 (mkdir -p build && \
     cd build && \
     CC=gcc-7 CXX=g++-7 cmake -DCMAKE_BUILD_TYPE=Release .. && \
-    make -j258 && \
+    make -j$THREADS && \
     make install) || exit 1
 
 cd /mnt/blocksci
