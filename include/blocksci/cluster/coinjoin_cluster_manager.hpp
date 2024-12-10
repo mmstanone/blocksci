@@ -56,9 +56,24 @@ namespace blocksci {
         CoinjoinClusterManager &operator=(CoinjoinClusterManager &&other);
         ~CoinjoinClusterManager();
 
+        /**
+         * Create a clustering around CoinJoin transactions of given type.
+         *
+         * First, find the CoinJoin transactions and collect addresses within 2 hops of them.
+         * Then, create clusters using the provided clustering heuristic function.
+         * Finally, serialize the cluster data to the output directory.
+         *
+         * @param chain BlockRange to cluster
+         * @param clusteringFunc Clustering heuristic function
+         * @param outputPath Path to output directory
+         * @param overwrite Overwrite existing cluster data
+         * @param coinjoinType Type of CoinJoin transactions to cluster (wasabi1, wasabi2, whirlpool)
+         * @param maxHops Maximum number of hops to collect addresses around CoinJoin transactions
+         * @return CoinjoinClusterManager instance
+         */
         static CoinjoinClusterManager createClustering(
             BlockRange &chain, const blocksci::coinjoin_heuristics::ClusteringHeuristic &clusteringFunc,
-            const std::string &outputPath, bool overwrite = false, std::string coinjoinType = "None");
+            const std::string &outputPath, bool overwrite = false, std::string coinjoinType = "None", int maxHops = 2);
 
         Cluster getCluster(const Address &address) const;
 
