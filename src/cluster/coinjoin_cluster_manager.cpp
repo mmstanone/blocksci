@@ -398,16 +398,17 @@ namespace blocksci {
      * @param outputPath Path to output directory
      * @param overwrite Overwrite existing cluster data
      * @param coinjoinType Type of CoinJoin transactions to cluster (wasabi1, wasabi2, whirlpool)
+     * @param maxHops Maximum number of hops to collect addresses around CoinJoin transactions
      * @return CoinjoinClusterManager instance
      */
     CoinjoinClusterManager CoinjoinClusterManager::createClustering(
         BlockRange &chain, const blocksci::coinjoin_heuristics::ClusteringHeuristic &clusteringFunc,
-        const std::string &outputPath, bool overwrite, std::string coinjoinType) {
+        const std::string &outputPath, bool overwrite, std::string coinjoinType, int maxHops) {
         ClusterManager::prepareClusterDataLocation(outputPath, overwrite);
 
         auto &scripts = chain.getAccess().getScripts();
         auto coinjoinTransactions = identifyCoinjoinTransactions(chain, coinjoinType);
-        auto collectedAddresses = collectAddressesWithinHops(coinjoinTransactions, 2);
+        auto collectedAddresses = collectAddressesWithinHops(coinjoinTransactions, maxHops);
 
         std::cout << "Collected " << collectedAddresses.size() << " addresses" << std::endl;
         // Create clusters

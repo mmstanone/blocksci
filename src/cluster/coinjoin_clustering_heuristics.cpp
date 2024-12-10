@@ -28,6 +28,10 @@ namespace blocksci {
 
                     auto next_level_inputAddress = next_level_input.getAddress();
 
+                    if (collectedAddresses.find(next_level_inputAddress) == collectedAddresses.end()) {
+                        continue;
+                    }
+
                     if (coinjoinTransactions.count(next_level_input_tx)) {
                         continue;
                     }
@@ -102,7 +106,7 @@ namespace blocksci {
 
                 for (const auto& nextLevelInput : nextTx.inputs()) {
                     auto nextLevelInputAddress = nextLevelInput.getAddress();
-                    if (collectedAddresses.find(nextTxOutputAddress) == collectedAddresses.end()) {
+                    if (collectedAddresses.find(nextLevelInputAddress) == collectedAddresses.end()) {
                         continue;
                     }
 
@@ -155,6 +159,9 @@ namespace blocksci {
                 }
 
                 auto base_address = spending_tx.inputs()[0].getAddress();
+                if (collectedAddresses.find(base_address) == collectedAddresses.end()) {
+                    continue;
+                }
 
                 for (const auto& input : spending_tx.inputs()) {
                     auto input_tx = input.getSpentTx();
