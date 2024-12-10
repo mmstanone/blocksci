@@ -2,10 +2,11 @@
 #define blocksci_coinjoin_utils_hpp
 
 #include <blocksci/blocksci_export.h>
+#include <limits.h>
+
+#include <algorithm>
 #include <blocksci/address/address.hpp>
 #include <unordered_set>
-#include <limits.h>
-#include <algorithm>
 #include <vector>
 
 namespace blocksci {
@@ -21,16 +22,13 @@ namespace blocksci {
             denominations.insert(maxSatoshis);
 
             // Powers of 2
-            for (int i = 0; i < maxSatoshis; i++)
-            {
+            for (int i = 0; i < maxSatoshis; i++) {
                 denom *= 2;
-                if (denom < minSatoshis)
-                {
+                if (denom < minSatoshis) {
                     continue;
                 }
 
-                if (denom > maxSatoshis)
-                {
+                if (denom > maxSatoshis) {
                     break;
                 }
 
@@ -39,17 +37,14 @@ namespace blocksci {
 
             denom = 3;
             // Powers of 3
-            for (int i = 0; i < INT_MAX; i++)
-            {
+            for (int i = 0; i < INT_MAX; i++) {
                 denom *= 3;
 
-                if (denom < minSatoshis)
-                {
+                if (denom < minSatoshis) {
                     continue;
                 }
 
-                if (denom > maxSatoshis)
-                {
+                if (denom > maxSatoshis) {
                     break;
                 }
 
@@ -58,17 +53,14 @@ namespace blocksci {
 
             // Powers of 3 * 2
             denom = 3;
-            for (int i = 0; i < INT_MAX; i++)
-            {
+            for (int i = 0; i < INT_MAX; i++) {
                 denom *= 3;
                 auto next = denom * 2;
-                if (denom < minSatoshis)
-                {
+                if (denom < minSatoshis) {
                     continue;
                 }
 
-                if (denom > maxSatoshis)
-                {
+                if (denom > maxSatoshis) {
                     break;
                 }
 
@@ -77,17 +69,14 @@ namespace blocksci {
 
             denom = 10;
             // Powers of 10 (1-2-5 series)
-            for (int i = 0; i < INT_MAX; i++)
-            {
+            for (int i = 0; i < INT_MAX; i++) {
                 denom *= 10;
 
-                if (denom < minSatoshis)
-                {
+                if (denom < minSatoshis) {
                     continue;
                 }
 
-                if (denom > maxSatoshis)
-                {
+                if (denom > maxSatoshis) {
                     break;
                 }
 
@@ -96,17 +85,14 @@ namespace blocksci {
 
             denom = 10;
             // Powers of 10 * 2 (1-2-5 series)
-            for (int i = 0; i < INT_MAX; i++)
-            {
+            for (int i = 0; i < INT_MAX; i++) {
                 denom *= 10;
                 auto a = denom * 2;
-                if (denom < minSatoshis)
-                {
+                if (denom < minSatoshis) {
                     continue;
                 }
 
-                if (denom > maxSatoshis)
-                {
+                if (denom > maxSatoshis) {
                     break;
                 }
 
@@ -115,31 +101,29 @@ namespace blocksci {
 
             denom = 10;
             // Powers of 10 * 5 (1-2-5 series)
-            for (int i = 0; i < INT_MAX; i++)
-            {
+            for (int i = 0; i < INT_MAX; i++) {
                 denom *= 10;
                 auto a = denom * 2;
 
-                if (denom < minSatoshis)
-                {
+                if (denom < minSatoshis) {
                     continue;
                 }
 
-                if (denom > maxSatoshis)
-                {
+                if (denom > maxSatoshis) {
                     break;
                 }
 
                 denominations.insert(a);
             }
 
-            return denominations; 
+            return denominations;
         }
 
         static inline std::vector<std::string> compute_ww1_coord_scripts() {
             return {"bc1qs604c7jv6amk4cxqlnvuxv26hv3e48cds4m0ew", "bc1qa24tsgchvuxsaccp8vrnkfd85hrcpafg20kmjw"};
         }
-    public:
+
+       public:
         static inline std::vector<std::string> ww1_coord_scripts = CoinjoinUtils::compute_ww1_coord_scripts();
         static inline std::unordered_set<long> ww2_denominations = CoinjoinUtils::compute_ww2_denominations();
 
@@ -153,10 +137,8 @@ namespace blocksci {
         static inline int64_t FirstWasabiBlock = 530500;
         static inline int64_t FirstSamouraiBlock = 570000;
         static inline int64_t FirstWasabiNoCoordAddressBlock = 610000;
-
-        
     };
 
-}
+}  // namespace blocksci
 
 #endif

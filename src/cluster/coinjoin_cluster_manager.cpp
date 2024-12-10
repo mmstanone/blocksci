@@ -1,11 +1,3 @@
-//
-//  cluster_manager.cpp
-//  blocksci
-//
-//  Created by Harry Kalodner on 7/6/17.
-//
-//
-
 #include <dset/dset.h>
 #include <wjfilesystem/path.h>
 
