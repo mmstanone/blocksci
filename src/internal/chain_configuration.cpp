@@ -15,10 +15,12 @@ using json = nlohmann::json;
 namespace blocksci {
 
     void to_json(json& j, const CoinJoinConfiguration &p) {
-        j["FirstSamouraiBlock"] = p.FirstSamouraiBlock;
-        j["FirstWasabiBlock"] = p.FirstWasabiBlock;
-        j["FirstWasabi2Block"] = p.FirstWasabi2Block;
-        j["FirstWasabiNoCoordAddressBlock"] = p.FirstWasabiNoCoordAddressBlock;
+        j["coinJoinConfiguration"] = {
+            {"FirstSamouraiBlock", p.FirstSamouraiBlock},
+            {"FirstWasabiBlock", p.FirstWasabiBlock},
+            {"FirstWasabi2Block", p.FirstWasabi2Block},
+            {"FirstWasabiNoCoordAddressBlock", p.FirstWasabiNoCoordAddressBlock}
+        };
     }
 
     void from_json(const json& j, CoinJoinConfiguration &p) {

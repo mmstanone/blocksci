@@ -58,7 +58,7 @@ namespace blocksci {
 
         static CoinjoinClusterManager createClustering(
             BlockRange &chain, const blocksci::coinjoin_heuristics::ClusteringHeuristic &clusteringFunc,
-            const std::string &outputPath, bool overwrite = false, std::string coinjoinType = "None");
+            const std::string &outputPath, bool overwrite = false, std::string coinjoinType = "None", int maxHops = 2);
 
         Cluster getCluster(const Address &address) const;
 
