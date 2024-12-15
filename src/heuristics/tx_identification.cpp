@@ -466,26 +466,21 @@ namespace heuristics {
 
     void findSubsets(std::vector<int>::iterator start, std::vector<int>::iterator end, int sum,
                         std::vector<int> &path, int target) {
-        // If the current sum equals the target, print the path
         if (sum == target) {
             return;
         }
 
-        // If the sum exceeds the target or there are no more elements to consider, return
         if (sum > target || start == end || path.size() >= 4) {
             return;
         }
 
-        // Include the current element and move to the next
         path.push_back(*start);
         findSubsets(std::next(start), end, sum + *start, path, target);
 
-        // Exclude the current element and move to the next
         path.pop_back();
         findSubsets(std::next(start), end, sum, path, target);
     }
 
-    // Main function to start the subset sum algorithm
     void subsetSum(std::vector<int> &numbers, int target, std::vector<int> &path) {
         findSubsets(numbers.begin(), numbers.end(), 0, path, target);
     }
@@ -496,7 +491,6 @@ namespace heuristics {
      * spendingTx must go to a Wasabi2 CoinJoin (to_cj_spendingTx)
      * to_cj_spendingTx has some value, I need to find the subset sum in coinjoin outputs that equals
      * to_cj_spendingTx input
-     *
      */
     HWWalletRemixResult isLongDormantInRemixes(const Transaction &tx) {
         // the tx has to be dormant for 6 months and is >= 1 BTC (out -> hww)
@@ -534,8 +528,6 @@ namespace heuristics {
             return HWWalletRemixResult::False;
         }
 
-        // std::cout << 3 << std::endl;
-
         for (const auto &o : spendingTx.outputs()) {
             // then to a mix (cj space -> mix)
             auto to_cj_output = o;
@@ -562,16 +554,12 @@ namespace heuristics {
             }
 
             // then if output stays for 6 months it's a HW trezor suite wallet remix (starting from 06/23)
-            // std::cout << 6 << std::endl;
-
             if (to_cj_spendingTx.block().timestamp() > 1685570400) {
                 if (!to_cj_spendingTx.outputs()[0].isSpent() 
                 || to_cj_spendingTx.outputs()[0].getSpendingTx().value().block().timestamp() - to_cj_spendingTx.block().timestamp() < 15814800) {
                     return HWWalletRemixResult::Trezor;
                 }
             }
-
-            // std::cout << 7 << std::endl;
 
             // if output goes in 3 days and stays for 6 months it's a SW wallet remix
             if (to_cj_spendingTx.block().timestamp() - to_cj_output.getSpendingTx().value().block().timestamp() <
@@ -588,7 +576,12 @@ namespace heuristics {
         return HWWalletRemixResult::False;
     }
 
-
+    /**
+     * WW1 detection based on detection of the coordinator fee in the outputs.
+     * The coordinator fee was sent to one of 2 fixed addresses.
+     * All outputs must be segwit, there must be at least 2 different output values 
+     * and each must appear at least twice.
+     */
     bool _isWasabi1StaticCoordinator(const Transaction &tx) {
         std::unordered_map<int64_t, int> outputValues;
         bool is_coord_output = false;
@@ -628,6 +621,16 @@ namespace heuristics {
         return false;
     }
 
+    /**
+     * After the removing of the static coordinators, we need to employ more "heuristical"
+     * methods to detect Wasabi1 CoinJoins.
+     * - The base denomination is fixed at 0.1 BTC +- 0.02 BTC
+     * - There are at least 2 different output values
+     * - The most frequent output value appears at least 10 times
+     * - The most frequent output value is almost the base denomination
+     * - There are more inputs than the most frequent output value
+     * - All outputs are segwit
+     */
     bool _isWasabi1PostStaticCoordinator(const Transaction &tx) {                                
         std::unordered_map<int64_t, int> outputValues;
         for (auto output : tx.outputs()) {
@@ -669,6 +672,10 @@ namespace heuristics {
         return true;
     }
 
+    /**
+     * Wasabi1 CoinJoin detection heuristic.
+     * If the transaction happened before a certain block, different heuristics must be used.
+     */
     bool isWasabi1CoinJoin(const Transaction &tx) {
         if (tx.getBlockHeight() < blocksci::CoinjoinUtils::FirstWasabiBlock) {
             return false;
@@ -686,7 +693,7 @@ namespace heuristics {
     }
 
     /**
-     * Check if a transaction looks like a Wasabi2 CoinJoin transaction.
+     * Wasabi2 CoinJoin detection heuristic.
      * Ported from Dumplings
      */
     bool isWasabi2CoinJoin(const Transaction &tx, std::optional<uint64_t> inputCount) {
@@ -779,6 +786,16 @@ namespace heuristics {
         return count > (tx.outputCount() * 0.8);
     }
 
+    /**
+     * Whirlpool CoinJoin detection heuristic, ported from Dumplings.
+     * The heuristic is based on the following rules:
+     * - The current pool size must be one of the following: 0.001 BTC, 0.01 BTC, 0.1 BTC, 0.5 BTC
+     * - The number of inputs must be between 5 and 10
+     * - The number of outputs must be between 5 and 10 (but the same as the number of inputs)
+     * - All outputs must have the same value as the current pool size
+     * - There must be at least one input with the current pool size
+     * - All inputs must have the current pool size or be within 0.0011 BTC of the current pool size (fee)
+     */
     bool isWhirlpoolCoinJoin(const Transaction &tx) {
         if (tx.getBlockHeight() < blocksci::CoinjoinUtils::FirstSamouraiBlock) {
             return false;

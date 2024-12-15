@@ -1,11 +1,3 @@
-//
-//  cluster_manager.cpp
-//  blocksci
-//
-//  Created by Harry Kalodner on 7/6/17.
-//
-//
-
 #include <dset/dset.h>
 #include <wjfilesystem/path.h>
 
@@ -101,6 +93,11 @@ namespace blocksci {
 
     CoinjoinClusterManager::~CoinjoinClusterManager() = default;
 
+    /**
+     * Get the cluster for a given address.
+     * If the address was not a part of the clustering (e.g. not found within the distance),
+     * return an empty cluster.
+     */
     Cluster CoinjoinClusterManager::getCluster(const Address &address) const {
         auto clusterNum = access->getClusterNum(RawAddress{address.scriptNum, address.type});
         if (clusterNum == UINT32_MAX) {
@@ -174,12 +171,12 @@ namespace blocksci {
      * @param coinjoinTransactions A set of transactions that are coinjoins
      * @param heuristic The heuristic to use to cluster the transactions
      * 
-     * @return A pair of the cluster IDs and the number of clusters
-     */
+     * @return pair of the cluster IDs and the number of clusters to be used later
+    */
     std::pair<std::vector<uint32_t>, uint32_t> createClusters(
         BlockRange &chain, std::unordered_map<Address, uint32_t> collectedAddresses,
         std::unordered_set<Transaction> coinjoinTransactions,
-        const blocksci::coinjoin_heuristics::ClusteringHeuristic &heuristic) {
+        blocksci::coinjoin_heuristics::ClusteringHeuristic heuristic) {
         std::cout << "Creating disjoint sets of size " << collectedAddresses.size() << std::endl;
         blocksci::AddressDisjointSets ds(collectedAddresses.size(), collectedAddresses);
 
@@ -220,6 +217,11 @@ namespace blocksci {
      * This is used to collect addresses around CoinJoin transactions gathered in a different step.
      * 
      * This method also assigns a global index to the addresses.
+     * 
+     * @param startTransactions The set of transactions to start from
+     * @param maxHops The maximum number of hops to collect addresses from
+     * 
+     * @return A map of addresses to their global index
      */
     std::unordered_map<Address, uint32_t> collectAddressesWithinHops(
         const std::unordered_set<Transaction> &startTransactions, int maxHops) {
@@ -265,30 +267,42 @@ namespace blocksci {
         return collectedAddresses;
     }
 
+    /**
+     * Reused logic from ClusterManager::recordOrderedAddresses to serialize the cluster data.
+     * The following steps are taken:
+     *  1. prepare the clusterPositions array for determining how much space we need
+     *  2. in orderedScripts save the addresses ordered by their cluster index
+     *  3. write the orderedScripts to the clusterAddressesFile
+     * 
+     * In the end we have an "index access" file. This file combined with clusterPositions 
+     * is used for fast access to the cluster data given the address.
+     * 
+     * @param clusterIDs The global address id <-> cluster id mapping
+     * @param clusterPositions The positions of the clusters in the orderedScripts array
+     * @param scriptStarts The start index of each address type (global)
+     * @param scripts The script access object
+     * @param clusterAddressesFile The file to write the ordered addresses to
+     */
     void recordOrderedAddresses(const std::vector<uint32_t> &clusterIDs, std::vector<uint32_t> &clusterPositions,
                                 const std::unordered_map<DedupAddressType::Enum, uint32_t> &scriptStarts,
                                 const ScriptAccess &scripts, std::ofstream &clusterAddressesFile) {
         size_t totalAddresses = clusterIDs.size();
         std::vector<DedupAddress> orderedScripts;
 
-        // Build clusterPositions
         for (uint32_t clusterID : clusterIDs) {
             if (clusterID != UINT32_MAX) {
                 clusterPositions[clusterID + 1]++;
             }
         }
 
+        // Get the necessary space for the addresses given each cluster size
         for (size_t i = 1; i < clusterPositions.size(); ++i) {
             clusterPositions[i] += clusterPositions[i - 1];
         }
 
-        // Prepare orderedScripts
         orderedScripts.resize(clusterPositions.back());
-
-        // For tracking current position in each cluster
         std::vector<uint32_t> currentPositions = clusterPositions;
 
-        // Iterate over all addresses
         for (size_t i = 0; i < totalAddresses; ++i) {
             uint32_t clusterID = clusterIDs[i];
             if (clusterID == UINT32_MAX) {
@@ -296,11 +310,9 @@ namespace blocksci {
             }
 
             uint32_t &position = currentPositions[clusterID];
-            // Reconstruct DedupAddress from global index
             DedupAddressType::Enum addressType = DedupAddressType::NULL_DATA;
             uint32_t scriptNum = 0;
 
-            // Determine addressType and scriptNum based on global index 'i'
             for (const auto &pair : scriptStarts) {
                 DedupAddressType::Enum type = pair.first;
                 uint32_t startIndex = pair.second;
@@ -317,11 +329,19 @@ namespace blocksci {
             position++;
         }
 
-        // Write orderedScripts to file
         clusterAddressesFile.write(reinterpret_cast<char *>(orderedScripts.data()),
                                    static_cast<std::streamsize>(sizeof(DedupAddress) * orderedScripts.size()));
     }
 
+    /**
+     * Serializes all the index files, prepares the ordered addresses and writes them to the clusterAddressesFile.
+     * 
+     * @param scripts The script access object
+     * @param outputPath The output path for the cluster data
+     * @param clusterIDs The global address id <-> cluster id mapping
+     * @param scriptStarts The start index of each address type (global)
+     * @param clusterCount The number of clusters created
+     */
     void serializeCoinjoinClusterData(const ScriptAccess &scripts, const std::string &outputPath,
                                       const std::vector<uint32_t> &clusterIDs,
                                       const std::unordered_map<DedupAddressType::Enum, uint32_t> &scriptStarts,
@@ -361,6 +381,16 @@ namespace blocksci {
         }
     }
 
+    /**
+     * For each address in `collectedAddresses`, assign it a cluster ID based on the parent.
+     * 
+     * @param collectedAddresses A map of addresses to their index in the disjoint set
+     * @param totalAddressCount The total number of addresses in the script access object
+     * @param parents The parent cluster ID for each address
+     * @param scriptStarts The start index of each address type (global)
+     * 
+     * @return A vector of cluster IDs for each address
+     */
     std::vector<uint32_t> collectClusterIDs(std::unordered_map<Address, uint32_t> collectedAddresses, uint32_t totalAddressCount,
                                             const std::vector<uint32_t> &parents, std::unordered_map<DedupAddressType::Enum, uint32_t> scriptStarts) {
         // Create a vector of addresses ordered by their index in `collectedAddresses`
@@ -371,7 +401,6 @@ namespace blocksci {
             addresses[index] = address;
         }
 
-        // Prepare clusterIDs array
         std::vector<uint32_t> clusterIDs(totalAddressCount, UINT32_MAX);
 
         // Assign cluster IDs to global indices
@@ -386,37 +415,23 @@ namespace blocksci {
         return clusterIDs;
     }
 
-    /**
-     * Create a clustering around CoinJoin transactions of given type.
-     *
-     * First, find the CoinJoin transactions and collect addresses within 2 hops of them.
-     * Then, create clusters using the provided clustering heuristic function.
-     * Finally, serialize the cluster data to the output directory.
-     *
-     * @param chain BlockRange to cluster
-     * @param clusteringFunc Clustering heuristic function
-     * @param outputPath Path to output directory
-     * @param overwrite Overwrite existing cluster data
-     * @param coinjoinType Type of CoinJoin transactions to cluster (wasabi1, wasabi2, whirlpool)
-     * @return CoinjoinClusterManager instance
-     */
+
     CoinjoinClusterManager CoinjoinClusterManager::createClustering(
         BlockRange &chain, const blocksci::coinjoin_heuristics::ClusteringHeuristic &clusteringFunc,
-        const std::string &outputPath, bool overwrite, std::string coinjoinType) {
+        const std::string &outputPath, bool overwrite, std::string coinjoinType, int maxHops) {
         ClusterManager::prepareClusterDataLocation(outputPath, overwrite);
 
         auto &scripts = chain.getAccess().getScripts();
         auto coinjoinTransactions = identifyCoinjoinTransactions(chain, coinjoinType);
-        auto collectedAddresses = collectAddressesWithinHops(coinjoinTransactions, 2);
+        auto collectedAddresses = collectAddressesWithinHops(coinjoinTransactions, maxHops);
 
         std::cout << "Collected " << collectedAddresses.size() << " addresses" << std::endl;
-        // Create clusters
+
         auto [parents, clusterCount] = createClusters(chain, collectedAddresses, coinjoinTransactions, clusteringFunc);
 
         std::cout << "Preparing to serialize cluster data" << std::endl;
 
         size_t totalAddressCount = scripts.totalAddressCount();
-
         std::unordered_map<DedupAddressType::Enum, uint32_t> scriptStarts;
         {
             std::vector<uint32_t> starts(DedupAddressType::size);
@@ -429,16 +444,10 @@ namespace blocksci {
                 scriptStarts[type] = starts[i];
             }
         }
-
         auto clusterIDs = collectClusterIDs(collectedAddresses, totalAddressCount, parents, scriptStarts);
-
         uint32_t remappedClusterCount = remapClusterIdsForCoinJoins(clusterIDs);
 
-        std::cout << "Serializing cluster data" << std::endl;
-
         serializeCoinjoinClusterData(scripts, outputPath, clusterIDs, scriptStarts, remappedClusterCount);
-
-        std::cout << "Serialized" << std::endl;
         return {filesystem::path{outputPath}.str(), chain.getAccess()};
     }
 

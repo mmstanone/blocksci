@@ -25,6 +25,8 @@
 #include <range/v3/range_for.hpp>
 #include <range/v3/view/group_by.hpp>
 #include <range/v3/view/transform.hpp>
+#include <boost/optional.hpp>
+
 
 namespace blocksci {
     
@@ -32,7 +34,7 @@ namespace blocksci {
     
     
     Blockchain::Blockchain(const DataConfiguration &config) : Blockchain(std::make_unique<DataAccess>(config)) {
-        if (config.chainConfig.coinJoinConfiguration) {
+        if (config.chainConfig.coinJoinConfiguration != boost::none) {
             auto &cjConfig = config.chainConfig.coinJoinConfiguration.value();
             CoinjoinUtils::FirstSamouraiBlock = cjConfig.FirstSamouraiBlock;
             CoinjoinUtils::FirstWasabiBlock = cjConfig.FirstWasabiBlock;
