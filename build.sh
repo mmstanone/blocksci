@@ -1,6 +1,7 @@
 #!/bin/bash
 
-THREADS=$1 || 18
+DEFAULTTHREADS=18
+THREADS=${1:-$DEFAULTTHREADS}
 
 echo "Using $THREADS threads"
 cd /mnt/blocksci
@@ -23,4 +24,3 @@ CC=gcc-7 CXX=g++-7 pip3 install -e blockscipy || exit 1
 cd Notebooks
 
 jupyter notebook --ip="0.0.0.0" --allow-root || exit 1
-

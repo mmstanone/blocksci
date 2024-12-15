@@ -118,7 +118,7 @@ void init_coinjoin_cluster_manager(pybind11::module &s) {
                 return CoinjoinClusterManager::createClustering(range, heuristicFunc, outputPath, overwrite,
                                                                 coinjoinType, maxDistance);
             },
-            py::arg("chain"), py::arg("start"), py::arg("stop"), py::arg("heuristicFunc"), py::arg("output_path"),
+            py::arg("chain"), py::arg("start"), py::arg("stop"), py::arg("heuristic_func"), py::arg("output_path"),
             py::arg("overwrite") = false, py::arg("coinjoin_type") = "None", py::arg("max_distance") = 2,
             "Creates a clustering of the blockchain using the given heuristic and saves it to the given output path.\n"
             "Possible coinjoin types are:\n"

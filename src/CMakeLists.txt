@@ -259,7 +259,7 @@ set(CLUSTER_HEADERS
   ${BLOCKSCI_HEADER_PREFIX}/cluster/cluster_fwd.hpp
   ${BLOCKSCI_HEADER_PREFIX}/cluster/cluster_manager.hpp
   ${BLOCKSCI_HEADER_PREFIX}/cluster/coinjoin_cluster_manager.hpp
-  # ${BLOCKSCI_HEADER_PREFIX}/cluster/coinjoin_clustering_heuristics.hpp
+  ${BLOCKSCI_HEADER_PREFIX}/cluster/coinjoin_clustering_heuristics.hpp
   ${BLOCKSCI_HEADER_PREFIX}/cluster/cluster.hpp
 )
 

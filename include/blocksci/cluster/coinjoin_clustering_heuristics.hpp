@@ -18,11 +18,22 @@ namespace blocksci {
         struct BLOCKSCI_EXPORT ClusteringHeuristicsType {
             enum Enum {
                 OneOutputConsolidation,
+                OneOutputConsolidation1Hop,
+                OneOutputConsolidation2Hops,
+                OneOutputConsolidation3Hops,
                 OneOutputConsolidationWithChange,
+                OneOutputConsolidationWithChange1Hop,
+                OneOutputConsolidationWithChange2Hops,
+                OneOutputConsolidationWithChange3Hops,
                 OneInputConsolidation,
-                OneHopOutputThresholdConsolidation,
-                TwoHopOutputThresholdConsolidation,
-                ThreeHopOutputThresholdConsolidation,
+                OutputThresholdConsolidation,
+                OutputThresholdConsolidation1Hop,
+                OutputThresholdConsolidation2Hops,
+                OutputThresholdConsolidation3Hops,
+                FakeOutputConsolidation,
+                FakeOutputConsolidation1Hop,
+                FakeOutputConsolidation2Hops,
+                FakeOutputConsolidation3Hops,
                 None,
             };
         };
@@ -31,7 +42,7 @@ namespace blocksci {
         struct BLOCKSCI_EXPORT ClusteringHeuristicImpl {
             void operator()(const Transaction& tx, const std::unordered_set<Transaction>& coinjoinTransactions,
                             AddressDisjointSets& ds,
-                            const std::unordered_map<Address, uint32_t>& collectedAddresses) const;
+                            const std::unordered_map<Address, uint32_t>& collectedAddresses);
         };
 
         struct BLOCKSCI_EXPORT ClusteringHeuristic {
@@ -44,7 +55,7 @@ namespace blocksci {
             ClusteringHeuristic(HeuristicFunc func) : impl(std::move(func)) {}
 
             void operator()(const Transaction& tx, const std::unordered_set<Transaction>& coinjoinTransactions,
-                            AddressDisjointSets& ds, std::unordered_map<Address, uint32_t>& collectedAddresses) const {
+                            AddressDisjointSets& ds, std::unordered_map<Address, uint32_t>& collectedAddresses) {
                 impl(tx, coinjoinTransactions, ds, collectedAddresses);
             }
 
@@ -62,17 +73,32 @@ namespace blocksci {
             }
         };
 
+        // Many inputs into one output
         using OneOutputConsolidation = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidation>;
-        using OneOutputConsolidationWithChange =
-            ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidationWithChange>;
-        using OneInputConsolidation = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneInputConsolidation>;
-        using OneHopOutputThresholdConsolidation =
-            ClusteringHeuristicImpl<ClusteringHeuristicsType::OneHopOutputThresholdConsolidation>;
+        using OneOutputConsolidation1Hop = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidation1Hop>;
+        using OneOutputConsolidation2Hops = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidation2Hops>;
+        using OneOutputConsolidation3Hops = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidation3Hops>;
 
-        using TwoHopOutputThresholdConsolidation =
-            ClusteringHeuristicImpl<ClusteringHeuristicsType::TwoHopOutputThresholdConsolidation>;
-        using ThreeHopOutputThresholdConsolidation =
-            ClusteringHeuristicImpl<ClusteringHeuristicsType::ThreeHopOutputThresholdConsolidation>;
+        // Many inputs into two outputs, merge with smaller (change ?)
+        using OneOutputConsolidationWithChange = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidationWithChange>;
+        using OneOutputConsolidationWithChange1Hop = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidationWithChange1Hop>;
+        using OneOutputConsolidationWithChange2Hops = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidationWithChange2Hops>;
+        using OneOutputConsolidationWithChange3Hops = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneOutputConsolidationWithChange3Hops>;
+
+        using OneInputConsolidation = ClusteringHeuristicImpl<ClusteringHeuristicsType::OneInputConsolidation>;
+
+        // Many inputs, less outputs, take only inputs
+        using OutputThresholdConsolidation = ClusteringHeuristicImpl<ClusteringHeuristicsType::OutputThresholdConsolidation>;
+        using OutputThresholdConsolidation1Hop = ClusteringHeuristicImpl<ClusteringHeuristicsType::OutputThresholdConsolidation1Hop>;
+        using OutputThresholdConsolidation2Hops = ClusteringHeuristicImpl<ClusteringHeuristicsType::OutputThresholdConsolidation2Hops>;
+        using OutputThresholdConsolidation3Hops = ClusteringHeuristicImpl<ClusteringHeuristicsType::OutputThresholdConsolidation3Hops>;
+
+        // Fake tx heuristic (many inputs, 2 "same" outputs)
+        using FakeOutputConsolidation = ClusteringHeuristicImpl<ClusteringHeuristicsType::FakeOutputConsolidation>;
+        using FakeOutputConsolidation1Hop = ClusteringHeuristicImpl<ClusteringHeuristicsType::FakeOutputConsolidation1Hop>;
+        using FakeOutputConsolidation2Hops = ClusteringHeuristicImpl<ClusteringHeuristicsType::FakeOutputConsolidation2Hops>;
+        using FakeOutputConsolidation3Hops = ClusteringHeuristicImpl<ClusteringHeuristicsType::FakeOutputConsolidation3Hops>;
+
         using NoClustering = ClusteringHeuristicImpl<ClusteringHeuristicsType::None>;
 
     }  // namespace coinjoin_heuristics

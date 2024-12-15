@@ -176,7 +176,7 @@ namespace blocksci {
     std::pair<std::vector<uint32_t>, uint32_t> createClusters(
         BlockRange &chain, std::unordered_map<Address, uint32_t> collectedAddresses,
         std::unordered_set<Transaction> coinjoinTransactions,
-        const blocksci::coinjoin_heuristics::ClusteringHeuristic &heuristic) {
+        blocksci::coinjoin_heuristics::ClusteringHeuristic heuristic) {
         std::cout << "Creating disjoint sets of size " << collectedAddresses.size() << std::endl;
         blocksci::AddressDisjointSets ds(collectedAddresses.size(), collectedAddresses);
 
