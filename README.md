@@ -13,6 +13,7 @@ For the Python library, which is the main interface for the user, we set up Jupy
 To run BlockSci in Docker, the following steps are required:
 
 1. Clone this repository
+    1. You also need to clone with submodules. For that, either use `--recurse-submodules` while cloning, or, in the cloned repository, follow with `git submodule init` and `git submodule update --recursive`.
 2. Install [Docker](https://docs.docker.com/get-docker/)
 3. Build the Docker image by running `docker build -t blocksci-cj .` in the root of the repository. This is just an initial setup to get all the libraries, and the *real* compilation will happen later.
     1. We use `uv` to speed up the `blockscipy` installation, since it takes a long time.
